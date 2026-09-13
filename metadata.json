@@ -1,0 +1,6 @@
+{
+  "name": "Scriptorium",
+  "description": "AI-assisted novel writing studio with dynamic multi-vendor fallback, structured entity project bible, and multi-pane manuscript workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
