@@ -286,7 +286,13 @@ export function loadProviders(): ProviderTier[] {
 }
 
 export function saveProviders(providers: ProviderTier[]): void {
-  localStorage.setItem(LOCAL_STORAGE_PROVIDERS_KEY, JSON.stringify(providers));
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(LOCAL_STORAGE_PROVIDERS_KEY, JSON.stringify(providers));
+    }
+  } catch (e) {
+    console.warn('Could not persist providers to localStorage:', e);
+  }
 }
 
 export function normalizeBaseUrl(url: string): string {

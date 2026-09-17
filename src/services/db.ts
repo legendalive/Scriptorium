@@ -12,70 +12,154 @@ const DB_VERSION = 2; // Incremented for robust entity structure
 const STORES = ['projects', 'config', 'manuscripts', 'main_novel_content'];
 
 let dbInstance: IDBDatabase | null = null;
+let useMemoryFallback = false;
+const memoryStore: Record<string, Map<string, any>> = {
+  projects: new Map(),
+  config: new Map(),
+  manuscripts: new Map(),
+  main_novel_content: new Map(),
+};
 
-export function openDB(): Promise<IDBDatabase> {
+export function openDB(): Promise<IDBDatabase | null> {
+  if (useMemoryFallback) return Promise.resolve(null);
   if (dbInstance) return Promise.resolve(dbInstance);
 
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+  return new Promise((resolve) => {
+    try {
+      if (typeof window === 'undefined' || !window.indexedDB) {
+        console.warn('IndexedDB not supported in this environment, using memory storage fallback.');
+        useMemoryFallback = true;
+        resolve(null);
+        return;
+      }
 
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      STORES.forEach((store) => {
-        if (!db.objectStoreNames.contains(store)) {
-          db.createObjectStore(store, { keyPath: 'id' });
+      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        try {
+          const db = request.result;
+          STORES.forEach((store) => {
+            if (!db.objectStoreNames.contains(store)) {
+              db.createObjectStore(store, { keyPath: 'id' });
+            }
+          });
+        } catch (e) {
+          console.warn('Error during onupgradeneeded:', e);
         }
-      });
-    };
+      };
 
-    request.onsuccess = () => {
-      dbInstance = request.result;
-      resolve(dbInstance);
-    };
+      request.onsuccess = () => {
+        dbInstance = request.result;
+        resolve(dbInstance);
+      };
 
-    request.onerror = () => {
-      reject(request.error);
-    };
+      request.onerror = (e) => {
+        console.warn('IndexedDB open error, falling back to in-memory store:', e);
+        useMemoryFallback = true;
+        resolve(null);
+      };
+
+      request.onblocked = () => {
+        console.warn('IndexedDB blocked, falling back to in-memory store.');
+        useMemoryFallback = true;
+        resolve(null);
+      };
+    } catch (err) {
+      console.warn('IndexedDB open threw exception, falling back to memory store:', err);
+      useMemoryFallback = true;
+      resolve(null);
+    }
   });
 }
 
-export async function dbPut<T>(storeName: string, value: T): Promise<T> {
+export async function dbPut<T extends { id: string }>(storeName: string, value: T): Promise<T> {
   const db = await openDB();
+  if (!db || useMemoryFallback) {
+    if (!memoryStore[storeName]) memoryStore[storeName] = new Map();
+    memoryStore[storeName].set(value.id, value);
+    return value;
+  }
+
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    tx.objectStore(storeName).put(value);
-    tx.oncomplete = () => resolve(value);
-    tx.onerror = () => reject(tx.error);
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).put(value);
+      tx.oncomplete = () => resolve(value);
+      tx.onerror = () => {
+        // Fallback to memory
+        if (!memoryStore[storeName]) memoryStore[storeName] = new Map();
+        memoryStore[storeName].set(value.id, value);
+        resolve(value);
+      };
+    } catch {
+      if (!memoryStore[storeName]) memoryStore[storeName] = new Map();
+      memoryStore[storeName].set(value.id, value);
+      resolve(value);
+    }
   });
 }
 
 export async function dbGet<T>(storeName: string, id: string): Promise<T | null> {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly');
-    const req = tx.objectStore(storeName).get(id);
-    req.onsuccess = () => resolve((req.result as T) || null);
-    req.onerror = () => reject(req.error);
+  if (!db || useMemoryFallback) {
+    return memoryStore[storeName]?.get(id) || null;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const req = tx.objectStore(storeName).get(id);
+      req.onsuccess = () => resolve((req.result as T) || memoryStore[storeName]?.get(id) || null);
+      req.onerror = () => resolve(memoryStore[storeName]?.get(id) || null);
+    } catch {
+      resolve(memoryStore[storeName]?.get(id) || null);
+    }
   });
 }
 
 export async function dbGetAll<T>(storeName: string): Promise<T[]> {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly');
-    const req = tx.objectStore(storeName).getAll();
-    req.onsuccess = () => resolve((req.result as T[]) || []);
-    req.onerror = () => reject(req.error);
+  if (!db || useMemoryFallback) {
+    return Array.from(memoryStore[storeName]?.values() || []);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => {
+        const results = (req.result as T[]) || [];
+        if (results.length === 0 && memoryStore[storeName]?.size) {
+          resolve(Array.from(memoryStore[storeName].values()));
+        } else {
+          resolve(results);
+        }
+      };
+      req.onerror = () => resolve(Array.from(memoryStore[storeName]?.values() || []));
+    } catch {
+      resolve(Array.from(memoryStore[storeName]?.values() || []));
+    }
   });
 }
 
 export async function dbDelete(storeName: string, id: string): Promise<void> {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    tx.objectStore(storeName).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  if (memoryStore[storeName]) {
+    memoryStore[storeName].delete(id);
+  }
+  if (!db || useMemoryFallback) {
+    return;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
   });
 }
 
@@ -178,3 +262,63 @@ export async function getProjectConfig(configId: string, projectId: string): Pro
     entities,
   });
 }
+
+/**
+ * Exports all local collections as a single snapshot payload for Google Drive storage
+ */
+export async function exportAllDatabaseState(): Promise<{
+  version: number;
+  lastSyncedAt: number;
+  projects: any[];
+  config: any[];
+  manuscripts: any[];
+  main_novel_content: any[];
+}> {
+  const [projects, config, manuscripts, main_novel_content] = await Promise.all([
+    dbGetAll<any>('projects'),
+    dbGetAll<any>('config'),
+    dbGetAll<any>('manuscripts'),
+    dbGetAll<any>('main_novel_content'),
+  ]);
+
+  return {
+    version: DB_VERSION,
+    lastSyncedAt: Date.now(),
+    projects,
+    config,
+    manuscripts,
+    main_novel_content,
+  };
+}
+
+/**
+ * Restores entire database state from a snapshot downloaded from Google Drive
+ */
+export async function restoreAllDatabaseState(payload: {
+  projects?: any[];
+  config?: any[];
+  manuscripts?: any[];
+  main_novel_content?: any[];
+}): Promise<void> {
+  if (Array.isArray(payload.projects)) {
+    for (const p of payload.projects) {
+      if (p?.id) await dbPut('projects', p);
+    }
+  }
+  if (Array.isArray(payload.config)) {
+    for (const c of payload.config) {
+      if (c?.id) await dbPut('config', c);
+    }
+  }
+  if (Array.isArray(payload.manuscripts)) {
+    for (const m of payload.manuscripts) {
+      if (m?.id) await dbPut('manuscripts', m);
+    }
+  }
+  if (Array.isArray(payload.main_novel_content)) {
+    for (const n of payload.main_novel_content) {
+      if (n?.id) await dbPut('main_novel_content', n);
+    }
+  }
+}
+

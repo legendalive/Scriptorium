@@ -13,12 +13,15 @@ import {
   dbDelete,
   getProjectConfig,
   saveProjectConfig,
+  exportAllDatabaseState,
 } from './services/db';
 import {
   loadProviders,
   buildProjectBible,
   executeMultiVendorAi,
 } from './services/ai';
+import { initAuth, getAccessToken } from './services/auth';
+import { uploadDatabaseToDrive } from './services/drive';
 import { segmentManuscript } from './services/segmenter';
 import { exportToDocx, exportToMarkdown, exportToPlainText } from './services/exporter';
 import { Header } from './components/Header';
@@ -31,6 +34,7 @@ import { Toast, ToastMessage } from './components/Toast';
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [config, setConfig] = useState<ProjectConfig>({
     id: 'default-config',
     projectId: 'default',
@@ -87,6 +91,36 @@ export default function App() {
     const segs = segmentManuscript(manuscriptText, 6);
     setChapters(segs);
   }, [manuscriptText]);
+
+  // Listen to Google Drive auth state
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (_user, token) => {
+        setIsDriveConnected(!!token);
+      },
+      () => {
+        getAccessToken().then((token) => setIsDriveConnected(!!token));
+      }
+    );
+    getAccessToken().then((token) => setIsDriveConnected(!!token));
+    return () => unsubscribe();
+  }, []);
+
+  // Reload projects from storage (called after Google Drive restore)
+  const reloadProjectsFromStorage = useCallback(async () => {
+    try {
+      const allProjects = await dbGetAll<Project>('projects');
+      allProjects.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      setProjects(allProjects);
+      if (allProjects.length > 0) {
+        const target = allProjects.find((p) => p.id === activeProject?.id) || allProjects[0];
+        await switchProject(target);
+      }
+      addToast('Workspace synced with Google Drive snapshot.', 'success');
+    } catch (err: any) {
+      console.error('Failed to reload projects:', err);
+    }
+  }, [activeProject, addToast]);
 
   // Boot logic: open DB, load projects, or seed initial demo project
   useEffect(() => {
@@ -611,6 +645,7 @@ export default function App() {
         setPrompt={setPrompt}
         onGenerate={handleGenerate}
         generating={aiProgress.status === 'generating'}
+        driveConnected={isDriveConnected}
       />
 
       {/* 3-Column Main Workspace */}
@@ -646,13 +681,14 @@ export default function App() {
         onToast={addToast}
       />
 
-      {/* Dynamic AI Vendor Fallback Settings Modal */}
+      {/* Dynamic AI Vendor Fallback & Storage Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         providers={providers}
         onProvidersUpdated={(newProviders) => setProviders(newProviders)}
         onToast={addToast}
+        onDataRestored={reloadProjectsFromStorage}
       />
 
       {/* Project Manager Modal */}

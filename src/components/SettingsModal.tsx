@@ -10,6 +10,7 @@ import {
   EyeOff,
   Sliders,
   Check,
+  Cloud,
 } from 'lucide-react';
 import { ProviderTier } from '../types';
 import {
@@ -19,6 +20,7 @@ import {
   sanitizeProviderTier,
   testProviderConnection,
 } from '../services/ai';
+import { GoogleDriveSync } from './GoogleDriveSync';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -26,6 +28,7 @@ interface SettingsModalProps {
   providers: ProviderTier[];
   onProvidersUpdated: (providers: ProviderTier[]) => void;
   onToast: (msg: string, type?: 'info' | 'success' | 'error') => void;
+  onDataRestored?: () => void;
 }
 
 interface ProviderMeta {
@@ -81,6 +84,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   providers,
   onProvidersUpdated,
   onToast,
+  onDataRestored,
 }) => {
   // Ensure all supported providers exist in state and are sanitized with modern free models
   const [tiers, setTiers] = useState<ProviderTier[]>(() => {
@@ -117,6 +121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [testingVendor, setTestingVendor] = useState<string | null>(null);
   const [quickKeyInput, setQuickKeyInput] = useState('');
   const [detectedVendor, setDetectedVendor] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'storage' | 'ai'>('storage');
 
   if (!isOpen) return null;
 
@@ -281,17 +286,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/60 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-amber-400/10 text-amber-300">
-              <Key className="w-5 h-5" />
+              {activeTab === 'storage' ? <Cloud className="w-5 h-5" /> : <Key className="w-5 h-5" />}
             </div>
             <div>
               <h2 className="text-base font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-                <span>AI API Key Setup</span>
+                <span>{activeTab === 'storage' ? 'Cloud Storage & Google Drive' : 'AI API Key Setup'}</span>
                 <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
-                  Zero Config
+                  {activeTab === 'storage' ? 'Drive Sync' : 'Zero Config'}
                 </span>
               </h2>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Simply paste your API key, test connection, and save. All endpoints and models are handled automatically.
+                {activeTab === 'storage'
+                  ? 'Connect your Google Drive account to store your projects and novel manuscripts in the cloud.'
+                  : 'Simply paste your API key, test connection, and save. All endpoints and models are handled automatically.'}
               </p>
             </div>
           </div>
@@ -305,9 +312,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
+        {/* Tab Switcher */}
+        <div className="flex border-b border-zinc-800 bg-zinc-950 px-6 gap-2 pt-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('storage')}
+            className={`pb-2.5 px-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'storage'
+                ? 'border-amber-400 text-amber-300'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Cloud className="w-4 h-4" />
+            <span>Google Drive Storage</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('ai')}
+            className={`pb-2.5 px-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+              activeTab === 'ai'
+                ? 'border-amber-400 text-amber-300'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Key className="w-4 h-4" />
+            <span>AI Vendors & Models</span>
+          </button>
+        </div>
+
         {/* Content Body */}
         <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-5">
-          {/* Quick Paste Assistant */}
+          {activeTab === 'storage' ? (
+            <GoogleDriveSync
+              onSyncCompleted={() => {
+                if (onDataRestored) {
+                  onDataRestored();
+                }
+              }}
+              onToast={onToast}
+            />
+          ) : (
+            <>
+              {/* Quick Paste Assistant */}
           <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
@@ -466,6 +512,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               );
             })}
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer */}

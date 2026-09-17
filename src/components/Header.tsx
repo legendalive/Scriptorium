@@ -9,6 +9,7 @@ import {
   ChevronDown,
   FileText,
   FileType,
+  Cloud,
 } from 'lucide-react';
 import { Project } from '../types';
 
@@ -24,6 +25,7 @@ interface HeaderProps {
   setPrompt: (val: string) => void;
   onGenerate: (p: string) => void;
   generating: boolean;
+  driveConnected?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -38,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   setPrompt,
   onGenerate,
   generating,
+  driveConnected = false,
 }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -96,6 +99,24 @@ export const Header: React.FC<HeaderProps> = ({
           className="h-9 w-9 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center transition-colors"
         >
           <Library className="w-4 h-4" />
+        </button>
+
+        {/* Google Drive Status & Quick Access Button */}
+        <button
+          id="driveHeaderBtn"
+          onClick={onOpenSettings}
+          title={driveConnected ? 'Google Drive Synced (Click to manage)' : 'Connect Google Drive Storage'}
+          className={`h-9 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors ${
+            driveConnected
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+              : 'border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <Cloud className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Drive</span>
+          {driveConnected && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          )}
         </button>
 
         {/* Settings Button */}

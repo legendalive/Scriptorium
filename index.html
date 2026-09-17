@@ -9,9 +9,34 @@
     <meta property="og:description" content="AI-assisted novel writing studio with dynamic multi-vendor fallback, structured entity project bible, and multi-pane manuscript workspace." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Ensure trailing slash for GitHub Pages project subpaths (e.g. /my-repo -> /my-repo/)
+      // so relative assets resolve properly
+      if (
+        window.location.hostname.endsWith('github.io') &&
+        window.location.pathname.length > 1 &&
+        !window.location.pathname.endsWith('/') &&
+        !window.location.pathname.split('/').pop().includes('.')
+      ) {
+        window.location.replace(
+          window.location.pathname + '/' + window.location.search + window.location.hash
+        );
+      }
+    </script>
   </head>
-  <body>
-    <div id="root"></div>
+  <body class="bg-zinc-950 text-zinc-100">
+    <div id="root">
+      <div style="height: 100vh; display: flex; align-items: center; justify-content: center; background: #09090b; color: #a1a1aa; font-family: sans-serif; font-size: 13px;">
+        <div style="text-align: center;">
+          <div style="width: 24px; height: 24px; border: 2px solid #27272a; border-top-color: #f59e0b; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px auto;"></div>
+          <div style="font-weight: 600; color: #e4e4e7; letter-spacing: 0.05em;">SCRIPTORIUM</div>
+          <div style="font-size: 11px; margin-top: 4px; color: #71717a;">Loading workspace...</div>
+        </div>
+      </div>
+      <style>
+        @keyframes spin { to { transform: rotate(360deg); } }
+      </style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

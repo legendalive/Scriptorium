@@ -4,8 +4,15 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  // If deployed on GitHub Actions, GITHUB_REPOSITORY is "owner/repo"
+  // Vite base should match the repository path: "/<repo>/"
+  const repoName = process.env.GITHUB_REPOSITORY
+    ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/`
+    : undefined;
+  const base = process.env.BASE_PATH || repoName || './';
+
   return {
-    base: './',
+    base,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
