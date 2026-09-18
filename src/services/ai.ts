@@ -168,7 +168,6 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
 export function isDeprecatedModel(modelId: string): boolean {
   if (!modelId) return true;
   const id = modelId.toLowerCase().trim();
-  // Deprecated Gemini models
   if (
     id.includes('gemini-2.0-flash') ||
     id.includes('gemini-2.0-pro') ||
@@ -193,18 +192,15 @@ export function sanitizeProviderTier(tier: ProviderTier): ProviderTier {
   let preferred = tier.preferredModel || preset.defaultModel;
   let fallback = tier.fallbackModels || preset.knownFreeModels.join(', ');
 
-  // Migrate deprecated models to the preset's best free default
   if (isDeprecatedModel(preferred)) {
     preferred = preset.defaultModel;
   }
 
-  // Clean fallback models list of any deprecated entries
   const cleanedFallbacks = fallback
     .split(',')
     .map((s) => s.trim())
     .filter((m) => m && !isDeprecatedModel(m));
 
-  // Ensure all known free models from the preset are present
   preset.knownFreeModels.forEach((km) => {
     if (!cleanedFallbacks.includes(km)) {
       cleanedFallbacks.push(km);
@@ -231,17 +227,20 @@ export function autoDetectVendorFromKey(key: string): 'openrouter' | 'groq' | 'g
   if (trimmed.startsWith('AIza')) return 'gemini';
   if (trimmed.startsWith('sk-') && trimmed.includes('deepseek')) return 'deepseek';
   if (trimmed.startsWith('sk-proj-') || trimmed.startsWith('sk-')) return 'openai';
-  return 'gemini'; // Default to Google AI Studio if unrecognized
+  return 'gemini';
 }
 
 const LOCAL_STORAGE_PROVIDERS_KEY = 'scriptorium_providers_v2';
 
 export function loadProviders(): ProviderTier[] {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_PROVIDERS_KEY);
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return DEFAULT_PROVIDERS.map(sanitizeProviderTier);
+    }
+
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_PROVIDERS_KEY);
     if (!raw) {
-      // Check if legacy providers exist
-      const legacy = localStorage.getItem('scriptorium_providers');
+      const legacy = window.localStorage.getItem('scriptorium_providers');
       if (legacy) {
         const parsed = JSON.parse(legacy);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -271,14 +270,12 @@ export function loadProviders(): ProviderTier[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       const sanitized = parsed.map(sanitizeProviderTier);
-      // Sort tiers with valid API keys first
       sanitized.sort((a, b) => (b.apiKey ? 1 : 0) - (a.apiKey ? 1 : 0));
-      // Persist the sanitized providers to clean out any previously saved deprecated models
       saveProviders(sanitized);
       return sanitized;
     }
   } catch (e) {
-    console.error('Failed to load providers:', e);
+    console.error('Failed to load providers from localStorage:', e);
   }
   const fallback = DEFAULT_PROVIDERS.map(sanitizeProviderTier);
   saveProviders(fallback);
@@ -315,9 +312,6 @@ export function getModelsEndpoint(baseUrl: string): string {
   return `${norm}/models`;
 }
 
-/**
- * Dynamically queries the vendor's /models endpoint to discover all models available to the key
- */
 export async function fetchLiveModels(provider: ProviderTier): Promise<DiscoveredModel[]> {
   const modelsUrl = getModelsEndpoint(provider.baseUrl);
   if (!modelsUrl || !provider.apiKey) {
@@ -368,18 +362,13 @@ export async function fetchLiveModels(provider: ProviderTier): Promise<Discovere
   }
 }
 
-/**
- * Automatically scores and dynamically selects the best available model for writing
- */
 export function scoreModelForWriting(modelId: string): number {
   const id = modelId.toLowerCase().trim();
 
-  // Heavily discard deprecated models
   if (isDeprecatedModel(id)) {
     return -1000;
   }
 
-  // Discard embeddings, whisper, audio, tts, image models
   if (
     id.includes('embed') ||
     id.includes('whisper') ||
@@ -394,30 +383,23 @@ export function scoreModelForWriting(modelId: string): number {
 
   let score = 50;
 
-  // Google AI Studio / Gemini tier
   if (id.includes('gemini-3.8-flash')) score += 60;
   else if (id.includes('gemini-3.6-flash')) score += 58;
   else if (id.includes('gemini-flash-latest')) score += 56;
   else if (id.includes('gemini-3.1-flash-lite')) score += 52;
-  // Anthropic / Claude
   else if (id.includes('claude-3-7') || id.includes('claude-3.7')) score += 55;
   else if (id.includes('claude-3-5-sonnet') || id.includes('claude-3.5-sonnet')) score += 50;
-  // Llama & Groq
   else if (id.includes('llama-3.3-70b')) score += 48;
   else if (id.includes('llama-3.1-70b')) score += 46;
-  // DeepSeek
   else if (id.includes('deepseek-chat') || id.includes('deepseek-v3')) score += 47;
   else if (id.includes('deepseek-r1') || id.includes('r1')) score += 45;
-  // OpenAI
   else if (id.includes('gpt-4o') && !id.includes('mini')) score += 44;
   else if (id.includes('gpt-4o-mini')) score += 40;
-  // Open weight models
   else if (id.includes('qwen-2.5-72b') || id.includes('qwen2.5-72b')) score += 43;
   else if (id.includes('mistral-large')) score += 40;
   else if (id.includes('llama-3.1-8b') || id.includes('llama-3.2')) score += 35;
   else if (id.includes('gemma2-9b')) score += 32;
 
-  // Free model tags get high availability priority
   if (id.includes(':free')) score += 10;
 
   return score;
@@ -428,7 +410,6 @@ export function pickBestAvailableModel(provider: ProviderTier, discovered?: Disc
 
   const list = discovered || provider.cachedModels;
   if (list && list.length > 0) {
-    // Filter out obvious non-chat and deprecated models
     const valid = list.filter((m) => {
       const id = m.id.toLowerCase();
       return !isDeprecatedModel(id) && !id.includes('embed') && !id.includes('whisper') && !id.includes('dall-e') && !id.includes('audio');
@@ -440,25 +421,16 @@ export function pickBestAvailableModel(provider: ProviderTier, discovered?: Disc
     }
   }
 
-  // If user provided a preferred model and it is NOT deprecated, respect it
   if (provider.preferredModel?.trim() && !isDeprecatedModel(provider.preferredModel)) {
     return provider.preferredModel.trim();
   }
 
-  // Default to preset's modern free default model
   return preset?.defaultModel || 'gpt-4o-mini';
 }
 
-/**
- * Gets all free models available from the provider:
- * Combines dynamically discovered free models (:free or pricing=0),
- * provider.fallbackModels, and known free models for that vendor preset,
- * strictly filtering out any deprecated models.
- */
 export function getAvailableFreeModels(provider: ProviderTier, discovered?: DiscoveredModel[]): string[] {
   const models = new Set<string>();
 
-  // 1. From discovered live models
   const list = discovered || provider.cachedModels;
   if (list) {
     list
@@ -466,7 +438,6 @@ export function getAvailableFreeModels(provider: ProviderTier, discovered?: Disc
       .forEach((m) => models.add(m.id));
   }
 
-  // 2. From provider.fallbackModels input
   if (provider.fallbackModels) {
     provider.fallbackModels
       .split(',')
@@ -475,7 +446,6 @@ export function getAvailableFreeModels(provider: ProviderTier, discovered?: Disc
       .forEach((m) => models.add(m));
   }
 
-  // 3. From preset known free models
   const preset = VENDOR_PRESETS[provider.vendorType];
   if (preset?.knownFreeModels) {
     preset.knownFreeModels
@@ -483,15 +453,11 @@ export function getAvailableFreeModels(provider: ProviderTier, discovered?: Disc
       .forEach((m) => models.add(m));
   }
 
-  // Sort candidate free models with best writing scores first
   const sorted = Array.from(models);
   sorted.sort((a, b) => scoreModelForWriting(b) - scoreModelForWriting(a));
   return sorted;
 }
 
-/**
- * Direct fallback to Google's native Generative Language API if the OpenAI compatibility endpoint has issues
- */
 async function executeGeminiDirect(
   apiKey: string,
   model: string,
@@ -553,9 +519,6 @@ async function executeGeminiDirect(
   }
 }
 
-/**
- * Single HTTP request to an OpenAI-compatible endpoint with automatic native fallback for Google Gemini
- */
 export async function executeChatCompletion(
   provider: ProviderTier,
   model: string,
@@ -584,7 +547,6 @@ export async function executeChatCompletion(
       'X-Title': 'Scriptorium AI Studio',
     };
 
-    // Google AI Studio OpenAI endpoint supports both Bearer and x-goog-api-key
     if (isGemini && provider.apiKey) {
       headers['x-goog-api-key'] = provider.apiKey;
     }
@@ -619,7 +581,6 @@ export async function executeChatCompletion(
         raw ||
         `HTTP Error ${response.status}`;
 
-      // If Google Gemini OpenAI endpoint failed, try direct native Gemini API
       if (isGemini && provider.apiKey) {
         console.warn(`[Gemini OpenAI endpoint failed: ${errMsg}] — attempting native generateContent fallback...`);
         return await executeGeminiDirect(provider.apiKey, model, systemPrompt, userPrompt, timeoutMs);
@@ -641,7 +602,6 @@ export async function executeChatCompletion(
     if (err.name === 'AbortError') {
       throw new Error(`[${provider.name} - ${model}] Request timed out after ${timeoutMs / 1000}s.`);
     }
-    // If it's a network/fetch error on Gemini OpenAI endpoint, try direct native endpoint
     if (isGemini && provider.apiKey && !err.message.includes('Gemini Native')) {
       try {
         return await executeGeminiDirect(provider.apiKey, model, systemPrompt, userPrompt, timeoutMs);
@@ -655,11 +615,6 @@ export async function executeChatCompletion(
   }
 }
 
-/**
- * Verifies and tests an AI provider with automatic cycling through free models.
- * If the primary or first model fails (e.g. 404 or unsupported), it automatically
- * tries other known free models until a working one is confirmed.
- */
 export async function testProviderConnection(
   rawProvider: ProviderTier
 ): Promise<{ success: boolean; workingModel: string; message: string }> {
@@ -667,20 +622,16 @@ export async function testProviderConnection(
   const preset = VENDOR_PRESETS[provider.vendorType];
   const effectiveBaseUrl = preset?.baseUrl || provider.baseUrl;
 
-  // Build candidate model list in order of preference (best free models first)
   const candidateModels: string[] = [];
 
-  // 1. Current preferred model (if valid and not deprecated)
   if (provider.preferredModel?.trim() && !isDeprecatedModel(provider.preferredModel)) {
     candidateModels.push(provider.preferredModel.trim());
   }
 
-  // 2. Preset default model
   if (preset?.defaultModel && !candidateModels.includes(preset.defaultModel)) {
     candidateModels.push(preset.defaultModel);
   }
 
-  // 3. Known free models for this vendor
   if (preset?.knownFreeModels) {
     preset.knownFreeModels.forEach((m) => {
       if (!candidateModels.includes(m) && !isDeprecatedModel(m)) {
@@ -689,7 +640,6 @@ export async function testProviderConnection(
     });
   }
 
-  // 4. Any models in provider.fallbackModels
   if (provider.fallbackModels) {
     provider.fallbackModels
       .split(',')
@@ -732,7 +682,6 @@ export async function testProviderConnection(
       lastError = err.message || 'Connection failed';
       console.warn(`Test model [${modelToTest}] failed for ${provider.name}:`, lastError);
 
-      // If invalid API key (401), stop early because no model will work with an invalid key
       if (lastError.includes('401') || lastError.toLowerCase().includes('invalid api key')) {
         return {
           success: false,
@@ -740,8 +689,6 @@ export async function testProviderConnection(
           message: 'Invalid API Key. Please verify that your key is typed correctly.',
         };
       }
-
-      // If it's 404 (model not found/deprecated) or rate limit, automatically cycle to the next candidate model
     }
   }
 
@@ -752,20 +699,12 @@ export async function testProviderConnection(
   };
 }
 
-/**
- * Executes multi-vendor fallback with dynamic model picking and free model cycling:
- * 1. Iterates through enabled provider tiers in sequence.
- * 2. Dynamically picks the best available model for that provider.
- * 3. If primary model fails: cycles through all free available models on that provider.
- * 4. If all fail: seamlessly falls back to the next vendor tier.
- */
 export async function executeMultiVendorAi(
   providers: ProviderTier[],
   systemPrompt: string,
   userPrompt: string,
   onProgress?: (progress: AiGenerationProgress) => void
 ): Promise<{ text: string; tierName: string; modelName: string }> {
-  // CRITICAL FIX: Only include providers that are enabled AND have an API key configured (or Ollama local)
   const enabledProviders = providers.filter(
     (p) => p.enabled && p.baseUrl.trim() && (p.vendorType === 'ollama' || (p.apiKey && p.apiKey.trim().length > 0))
   );
@@ -799,10 +738,8 @@ export async function executeMultiVendorAi(
     const provider = sanitizeProviderTier(rawProvider);
     const tierLabel = `Tier ${tierIdx + 1} (${provider.name})`;
 
-    // Determine the primary / best available model
     const primaryModel = pickBestAvailableModel(provider);
 
-    // Try primary model first
     updateProgress(
       'generating',
       `Attempting ${tierLabel} with primary model [${primaryModel}]...`,
@@ -828,7 +765,6 @@ export async function executeMultiVendorAi(
         primaryModel
       );
 
-      // Requirement: "for each tier, cycle through all free available models if the primary service is unresponsive"
       if (provider.cycleFreeModelsOnError) {
         const freeModels = getAvailableFreeModels(provider).filter((m) => m !== primaryModel);
 
@@ -853,7 +789,7 @@ export async function executeMultiVendorAi(
                 freeModel,
                 systemPrompt,
                 userPrompt,
-                60000 // 60s timeout for free models
+                60000
               );
               updateProgress(
                 'success',
@@ -875,7 +811,6 @@ export async function executeMultiVendorAi(
         }
       }
 
-      // If there are more provider tiers, log fallback
       if (tierIdx < enabledProviders.length - 1) {
         const nextProvider = enabledProviders[tierIdx + 1];
         updateProgress(
@@ -891,9 +826,6 @@ export async function executeMultiVendorAi(
   throw new Error(`Generation failed across configured providers:\n• ${aggregatedError}`);
 }
 
-/**
- * Builds the comprehensive Project Bible context incorporating all dynamic entities
- */
 export function buildProjectBible(
   config: ProjectConfig,
   bookName?: string,
@@ -901,7 +833,6 @@ export function buildProjectBible(
 ): string {
   const sections: string[] = [];
 
-  // Characters
   const characters = ((config.characters && config.characters.length > 0)
     ? config.characters
     : config.entities?.filter((e) => e.type === 'character') || []) as ConfigEntity<'character'>[];
@@ -917,7 +848,6 @@ export function buildProjectBible(
     sections.push(`CHARACTERS:\n${list}`);
   }
 
-  // Environments
   const environments = ((config.environments && config.environments.length > 0)
     ? config.environments
     : config.entities?.filter((e) => e.type === 'environment') || []) as ConfigEntity<'environment'>[];
@@ -934,7 +864,6 @@ export function buildProjectBible(
     sections.push(`ENVIRONMENTS / SETTINGS:\n${list}`);
   }
 
-  // Plot Arcs
   const plots = ((config.plots && config.plots.length > 0)
     ? config.plots
     : config.entities?.filter((e) => e.type === 'plot') || []) as ConfigEntity<'plot'>[];
@@ -950,7 +879,6 @@ export function buildProjectBible(
     sections.push(`PLOT ARCS & CONFLICTS:\n${list}`);
   }
 
-  // Items
   const items = ((config.items && config.items.length > 0)
     ? config.items
     : config.entities?.filter((e) => e.type === 'item') || []) as ConfigEntity<'item'>[];
@@ -967,7 +895,6 @@ export function buildProjectBible(
     sections.push(`KEY ITEMS & ARTIFACTS:\n${list}`);
   }
 
-  // Events
   const events = ((config.events && config.events.length > 0)
     ? config.events
     : config.entities?.filter((e) => e.type === 'event') || []) as ConfigEntity<'event'>[];
@@ -983,7 +910,6 @@ export function buildProjectBible(
     sections.push(`HISTORICAL EVENTS & TIMELINE:\n${list}`);
   }
 
-  // Magic & Tech Systems
   const systems = ((config.magicTechSystems && config.magicTechSystems.length > 0)
     ? config.magicTechSystems
     : config.entities?.filter((e) => e.type === 'magic_tech') || []) as ConfigEntity<'magic_tech'>[];
@@ -1000,7 +926,6 @@ export function buildProjectBible(
     sections.push(`MAGIC & TECH SYSTEMS:\n${list}`);
   }
 
-  // Factions & Groups
   const factions = ((config.factions && config.factions.length > 0)
     ? config.factions
     : config.entities?.filter((e) => e.type === 'faction') || []) as ConfigEntity<'faction'>[];
@@ -1017,7 +942,6 @@ export function buildProjectBible(
     sections.push(`FACTIONS & GROUPS:\n${list}`);
   }
 
-  // Themes & Motifs
   const themes = ((config.themes && config.themes.length > 0)
     ? config.themes
     : config.entities?.filter((e) => e.type === 'theme') || []) as ConfigEntity<'theme'>[];
@@ -1034,7 +958,6 @@ export function buildProjectBible(
     sections.push(`THEMES & MOTIFS:\n${list}`);
   }
 
-  // Prose Tone & Guidelines
   if (config.tone?.trim()) {
     sections.push(`PROSE & TONE GUIDELINES:\n${config.tone.trim()}`);
   }
