@@ -19,10 +19,12 @@ export const VENDOR_PRESETS: Record<
   gemini: {
     name: 'Google Gemini (AI Studio)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-1.5-flash',
+    defaultModel: 'gemini-3.8-flash',
     knownFreeModels: [
+      'gemini-3.8-flash',
+      'gemini-3.6-flash',
+      'gemini-2.5-flash',
       'gemini-1.5-flash',
-      'gemini-1.5-pro',
       'gemini-flash-latest',
     ],
     description: 'Google AI Studio with high-performance free quotas and expansive context windows',
@@ -39,9 +41,10 @@ export const VENDOR_PRESETS: Record<
     baseUrl: 'https://api.groq.com/openai/v1',
     defaultModel: 'llama-3.3-70b-versatile',
     knownFreeModels: [
+      'meta-llama/llama-4-scout-17b-16e-instruct',
+      'qwen/qwen3-32b',
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
-      'mixtral-8x7b-32768',
       'gemma2-9b-it',
     ],
     description: 'Extremely fast inference with free rate-limited tier',
@@ -51,14 +54,14 @@ export const VENDOR_PRESETS: Record<
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o-mini',
     knownFreeModels: ['gpt-4o-mini', 'gpt-4o'],
-    description: 'Standard OpenAI models (defaulting to fast, lightweight GPT-4o-mini)',
+    description: 'Standard OpenAI models',
   },
   deepseek: {
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     defaultModel: 'deepseek-chat',
     knownFreeModels: ['deepseek-chat', 'deepseek-reasoner'],
-    description: 'DeepSeek native models (DeepSeek-V3 and DeepSeek-R1)',
+    description: 'DeepSeek native models (DeepSeek-V3/V4 and DeepSeek-R1)',
   },
   together: {
     name: 'Together AI',
@@ -101,9 +104,9 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     apiKey: '',
     autoPickBestModel: true,
-    preferredModel: 'gemini-1.5-flash',
+    preferredModel: '',
     cycleFreeModelsOnError: true,
-    fallbackModels: 'gemini-1.5-flash, gemini-1.5-pro, gemini-flash-latest',
+    fallbackModels: 'gemini-3.8-flash, gemini-3.6-flash, gemini-2.5-flash, gemini-1.5-flash',
     enabled: false,
   },
   {
@@ -125,9 +128,9 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     apiKey: '',
     autoPickBestModel: true,
-    preferredModel: 'llama-3.3-70b-versatile',
+    preferredModel: '',
     cycleFreeModelsOnError: true,
-    fallbackModels: 'llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768, gemma2-9b-it',
+    fallbackModels: 'meta-llama/llama-4-scout-17b-16e-instruct, qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant',
     enabled: false,
   },
   {
@@ -160,15 +163,67 @@ export function isDeprecatedModel(modelId: string): boolean {
   if (!modelId) return true;
   const id = modelId.toLowerCase().trim();
   if (
-    id.includes('gemini-2.0-flash') ||
-    id.includes('gemini-2.0-pro') ||
-    id.includes('gemini-2.0-flash-thinking') ||
     id === 'gemini-pro' ||
-    id === 'gemini-1.0-pro'
+    id === 'gemini-1.0-pro' ||
+    id.includes('gemini-2.0-flash-thinking-exp')
   ) {
     return true;
   }
   return false;
+}
+
+export function scoreModelForWriting(modelId: string): number {
+  if (!modelId) return -1000;
+  const id = modelId.toLowerCase().trim();
+
+  if (isDeprecatedModel(id)) return -1000;
+
+  // Filter non-text tasks
+  if (
+    id.includes('embed') ||
+    id.includes('whisper') ||
+    id.includes('dall-e') ||
+    id.includes('tts') ||
+    id.includes('moderation') ||
+    id.includes('audio') ||
+    id.includes('realtime')
+  ) {
+    return -1000;
+  }
+
+  // OpenRouter Free Auto-Router always gets top score
+  if (id === 'openrouter/free') return 1000;
+
+  let score = 100;
+
+  // 1. Version extraction (Dynamic ranking across Gemini, DeepSeek, Claude, Llama, Qwen, etc.)
+  const versionMatch = id.match(/(?:gemini|claude|llama|qwen|gpt|deepseek)[^\d]*(\d+(?:\.\d+)?)/i);
+  if (versionMatch && versionMatch[1]) {
+    const versionNum = parseFloat(versionMatch[1]);
+    score += Math.floor(versionNum * 100); // Higher versions get higher base weight (e.g. v3.8 = +380, v3.6 = +360, v1.5 = +150)
+  }
+
+  // 2. Specific Model Lineages
+  if (id.includes('gemini')) score += 150;
+  if (id.includes('deepseek')) score += 140;
+  if (id.includes('claude')) score += 130;
+  if (id.includes('llama')) score += 100;
+  if (id.includes('qwen')) score += 100;
+
+  // 3. Model Size / Tier Identifiers
+  if (id.includes('70b') || id.includes('72b')) score += 50;
+  else if (id.includes('32b') || id.includes('33b')) score += 30;
+  else if (id.includes('8b') || id.includes('9b')) score += 10;
+
+  // 4. Variant Weights
+  if (id.includes('reasoner') || id.includes('r1')) score += 25;
+  if (id.includes('pro')) score += 20;
+  if (id.includes('flash')) score += 15;
+
+  // 5. Explicit free tag boost
+  if (id.includes(':free')) score += 10;
+
+  return score;
 }
 
 export function sanitizeProviderTier(tier: ProviderTier): ProviderTier {
@@ -328,86 +383,18 @@ export async function fetchLiveModels(provider: ProviderTier): Promise<Discovere
   }
 }
 
-export function scoreModelForWriting(modelId: string): number {
-  const id = modelId.toLowerCase().trim();
-
-  if (isDeprecatedModel(id)) {
-    return -1000;
-  }
-
-  if (
-    id.includes('embed') ||
-    id.includes('whisper') ||
-    id.includes('dall-e') ||
-    id.includes('tts') ||
-    id.includes('moderation') ||
-    id.includes('audio') ||
-    id.includes('realtime')
-  ) {
-    return -1000;
-  }
-
-  let score = 50;
-
-  if (id === 'openrouter/free') score += 100;
-  else if (id.includes('gemini-1.5-flash')) score += 60;
-  else if (id.includes('gemini-1.5-pro')) score += 58;
-  else if (id.includes('gemini-flash-latest')) score += 56;
-  else if (id.includes('claude-3-7') || id.includes('claude-3.7')) score += 55;
-  else if (id.includes('claude-3-5-sonnet') || id.includes('claude-3.5-sonnet')) score += 50;
-  else if (id.includes('llama-3.3-70b')) score += 48;
-  else if (id.includes('llama-3.1-70b')) score += 46;
-  else if (id.includes('deepseek-chat') || id.includes('deepseek-v3')) score += 47;
-  else if (id.includes('deepseek-reasoner') || id.includes('deepseek-r1')) score += 45;
-  else if (id.includes('gpt-4o') && !id.includes('mini')) score += 44;
-  else if (id.includes('gpt-4o-mini')) score += 40;
-  else if (id.includes('qwen-2.5-72b') || id.includes('qwen2.5-72b')) score += 43;
-  else if (id.includes('mistral-large')) score += 40;
-
-  if (id.includes(':free')) score += 10;
-
-  return score;
-}
-
-export function pickBestAvailableModel(provider: ProviderTier, discovered?: DiscoveredModel[]): string {
-  if (provider.vendorType === 'openrouter') {
-    return 'openrouter/free';
-  }
-
-  const preset = VENDOR_PRESETS[provider.vendorType];
-
-  const list = discovered || provider.cachedModels;
-  if (list && list.length > 0) {
-    const valid = list.filter((m) => {
-      const id = m.id.toLowerCase();
-      return !isDeprecatedModel(id) && !id.includes('embed') && !id.includes('whisper') && !id.includes('dall-e') && !id.includes('audio');
-    });
-
-    if (valid.length > 0) {
-      valid.sort((a, b) => scoreModelForWriting(b.id) - scoreModelForWriting(a.id));
-      return valid[0].id;
-    }
-  }
-
-  if (provider.preferredModel?.trim() && !isDeprecatedModel(provider.preferredModel)) {
-    return provider.preferredModel.trim();
-  }
-
-  return preset?.defaultModel || 'gpt-4o-mini';
-}
-
 export function getAvailableFreeModels(provider: ProviderTier, discovered?: DiscoveredModel[]): string[] {
   if (provider.vendorType === 'openrouter') {
     return ['openrouter/free'];
   }
 
-  const models = new Set<string>();
+  const modelsSet = new Set<string>();
 
   const list = discovered || provider.cachedModels;
   if (list && list.length > 0) {
     list
-      .filter((m) => (m.isFree || m.id.includes(':free')) && !isDeprecatedModel(m.id))
-      .forEach((m) => models.add(m.id));
+      .filter((m) => (m.isFree || m.id.includes(':free') || provider.vendorType === 'groq' || provider.vendorType === 'gemini') && !isDeprecatedModel(m.id))
+      .forEach((m) => modelsSet.add(m.id));
   }
 
   if (provider.fallbackModels) {
@@ -415,31 +402,37 @@ export function getAvailableFreeModels(provider: ProviderTier, discovered?: Disc
       .split(',')
       .map((s) => s.trim())
       .filter((m) => m && !isDeprecatedModel(m))
-      .forEach((m) => models.add(m));
+      .forEach((m) => modelsSet.add(m));
   }
 
   const preset = VENDOR_PRESETS[provider.vendorType];
   if (preset?.knownFreeModels) {
     preset.knownFreeModels
       .filter((m) => !isDeprecatedModel(m))
-      .forEach((m) => models.add(m));
+      .forEach((m) => modelsSet.add(m));
   }
 
-  const sorted = Array.from(models);
+  const sorted = Array.from(modelsSet);
   sorted.sort((a, b) => scoreModelForWriting(b) - scoreModelForWriting(a));
   return sorted;
 }
 
+export function pickBestAvailableModel(provider: ProviderTier, discovered?: DiscoveredModel[]): string {
+  const candidates = getAvailableFreeModels(provider, discovered);
+  return candidates.length > 0 ? candidates[0] : (VENDOR_PRESETS[provider.vendorType]?.defaultModel || 'gpt-4o-mini');
+}
+
 async function executeGeminiDirect(
   apiKey: string,
-  model: string,
+  requestedModel: string,
   systemPrompt: string,
   userPrompt: string,
   timeoutMs = 90000
 ): Promise<string> {
+  const presetModels = VENDOR_PRESETS.gemini.knownFreeModels;
   const geminiCandidates = Array.from(
-    new Set([model.replace(/^models\//, ''), 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest'])
-  );
+    new Set([requestedModel.replace(/^models\//, ''), ...presetModels])
+  ).sort((a, b) => scoreModelForWriting(b) - scoreModelForWriting(a));
 
   let lastErrMessage = '';
 
@@ -480,7 +473,7 @@ async function executeGeminiDirect(
       if (!response.ok) {
         const errMsg = data?.error?.message || data?.error || raw || `HTTP ${response.status}`;
         lastErrMessage = `[Gemini Native - ${targetModel}] HTTP ${response.status}: ${errMsg}`;
-        console.warn(`Gemini Native [${targetModel}] failed, trying candidate fallback...`);
+        console.warn(`Gemini Native [${targetModel}] failed, trying next highest scored candidate...`);
         continue;
       }
 
@@ -609,7 +602,7 @@ export async function testProviderConnection(
   const effectiveBaseUrl = preset?.baseUrl || provider.baseUrl;
 
   let discoveredModels: DiscoveredModel[] = [];
-  if (provider.vendorType !== 'openrouter') {
+  if (provider.vendorType !== 'openrouter' && provider.apiKey) {
     try {
       discoveredModels = await fetchLiveModels({ ...provider, baseUrl: effectiveBaseUrl });
       provider.cachedModels = discoveredModels;
@@ -618,28 +611,9 @@ export async function testProviderConnection(
     }
   }
 
-  const candidateModels: string[] = [];
-
-  const bestDynamic = pickBestAvailableModel(provider, discoveredModels);
-  if (bestDynamic && !isDeprecatedModel(bestDynamic)) {
-    candidateModels.push(bestDynamic);
-  }
-
-  if (
-    provider.preferredModel?.trim() &&
-    !candidateModels.includes(provider.preferredModel.trim()) &&
-    !isDeprecatedModel(provider.preferredModel)
-  ) {
-    candidateModels.push(provider.preferredModel.trim());
-  }
-
-  const dynamicFrees = getAvailableFreeModels(provider, discoveredModels);
-  dynamicFrees.forEach((m) => {
-    if (!candidateModels.includes(m)) candidateModels.push(m);
-  });
-
+  const candidateModels = getAvailableFreeModels(provider, discoveredModels);
   if (candidateModels.length === 0) {
-    candidateModels.push(preset?.defaultModel || 'gemini-1.5-flash');
+    candidateModels.push(preset?.defaultModel || 'gemini-3.8-flash');
   }
 
   let lastError = '';
@@ -698,7 +672,7 @@ export async function executeMultiVendorAi(
 
   if (enabledProviders.length === 0) {
     throw new Error(
-      'No active AI provider with an API key was found. Please open Settings and enter your API key (e.g. for Google Gemini or OpenRouter).'
+      'No active AI provider with an API key was found. Please open Settings and enter your API key.'
     );
   }
 
@@ -735,86 +709,52 @@ export async function executeMultiVendorAi(
       }
     }
 
-    const primaryModel = pickBestAvailableModel(provider, liveModels);
+    const rankedModels = getAvailableFreeModels(provider, liveModels);
 
-    updateProgress(
-      'generating',
-      `Attempting ${tierLabel} with primary model [${primaryModel}]...`,
-      provider.name,
-      primaryModel
-    );
+    if (rankedModels.length === 0) {
+      updateProgress('generating', `No models found for ${tierLabel}, skipping...`);
+      continue;
+    }
 
-    try {
-      const result = await executeChatCompletion(provider, primaryModel, systemPrompt, userPrompt);
-      updateProgress(
-        'success',
-        `Successfully generated output via ${tierLabel} [${primaryModel}].`,
-        provider.name,
-        primaryModel
-      );
-      return { text: result, tierName: provider.name, modelName: primaryModel };
-    } catch (primaryErr: any) {
-      console.warn(`Primary model error on ${tierLabel}:`, primaryErr.message);
+    for (let modelIdx = 0; modelIdx < rankedModels.length; modelIdx++) {
+      const currentModel = rankedModels[modelIdx];
       updateProgress(
         'generating',
-        `${tierLabel} [${primaryModel}] failed: ${primaryErr.message}`,
+        `Attempting ${tierLabel} with model [${currentModel}] (Rank #${modelIdx + 1}, Score: ${scoreModelForWriting(currentModel)})...`,
         provider.name,
-        primaryModel
+        currentModel
       );
 
-      if (provider.cycleFreeModelsOnError) {
-        const freeModels = getAvailableFreeModels(provider, liveModels).filter((m) => m !== primaryModel);
-
-        if (freeModels.length > 0) {
-          updateProgress(
-            'generating',
-            `Cycling through ${freeModels.length} free available models on ${tierLabel}...`,
-            provider.name
-          );
-
-          for (const freeModel of freeModels) {
-            updateProgress(
-              'generating',
-              `${tierLabel} cycling free model [${freeModel}]...`,
-              provider.name,
-              freeModel
-            );
-
-            try {
-              const freeResult = await executeChatCompletion(
-                provider,
-                freeModel,
-                systemPrompt,
-                userPrompt,
-                60000
-              );
-              updateProgress(
-                'success',
-                `Successfully generated output via ${tierLabel} free model [${freeModel}].`,
-                provider.name,
-                freeModel
-              );
-              return { text: freeResult, tierName: provider.name, modelName: freeModel };
-            } catch (freeErr: any) {
-              console.warn(`Free model [${freeModel}] failed on ${tierLabel}:`, freeErr.message);
-              updateProgress(
-                'generating',
-                `${tierLabel} free model [${freeModel}] failed: ${freeErr.message}`,
-                provider.name,
-                freeModel
-              );
-            }
-          }
-        }
-      }
-
-      if (tierIdx < enabledProviders.length - 1) {
-        const nextProvider = enabledProviders[tierIdx + 1];
+      try {
+        const result = await executeChatCompletion(provider, currentModel, systemPrompt, userPrompt);
+        updateProgress(
+          'success',
+          `Successfully generated output via ${tierLabel} [${currentModel}].`,
+          provider.name,
+          currentModel
+        );
+        return { text: result, tierName: provider.name, modelName: currentModel };
+      } catch (err: any) {
+        console.warn(`Model [${currentModel}] failed on ${tierLabel}:`, err.message);
         updateProgress(
           'generating',
-          `All models exhausted on ${tierLabel}. Falling back to Tier ${tierIdx + 2} (${nextProvider.name})...`
+          `${tierLabel} model [${currentModel}] failed: ${err.message}`,
+          provider.name,
+          currentModel
         );
+
+        if (!provider.cycleFreeModelsOnError) {
+          break; // Stop model cycling if disabled for tier
+        }
       }
+    }
+
+    if (tierIdx < enabledProviders.length - 1) {
+      const nextProvider = enabledProviders[tierIdx + 1];
+      updateProgress(
+        'generating',
+        `All models exhausted on ${tierLabel}. Falling back to Tier ${tierIdx + 2} (${nextProvider.name})...`
+      );
     }
   }
 
@@ -970,11 +910,11 @@ export function buildProjectBible(
 You must strictly adhere to the established project bible below. Maintain absolute continuity regarding character personalities, physical appearances, setting details, historical events, magic/tech limits, factions, and prose guidelines.
 
 REWRITING & ADAPTATION RULES:
-• When instructed to rewrite, adapt, convert perspective (e.g. third person, first person), adopt an aesthetic or dialect (e.g. Old English, Victorian, gothic fantasy, hardboiled), or adjust pacing/length (shorten, expand, heighten imagery), take the provided source manuscript draft or target passage and rewrite it accordingly.
+• When instructed to rewrite, adapt, convert perspective, adopt an aesthetic or dialect, or adjust pacing/length, take the provided source manuscript draft or target passage and rewrite it accordingly.
 • Seamlessly infuse all character voices, lore, items, and worldbuilding constraints from the Project Bible into the rewritten prose.
 • Preserve core narrative actions, relationships, and events unless explicitly told to alter them.
 • Write rich, atmospheric, sensory-detailed prose with natural dialogue and organic rhythm.
-• Output ONLY publication-ready prose ready to be inserted directly into the novel. Do NOT include greetings, preamble (e.g., "Here is the rewritten text:"), conversational chatter, or meta-explanations.
+• Output ONLY publication-ready prose ready to be inserted directly into the novel. Do NOT include greetings, preamble, conversational chatter, or meta-explanations.
 
 ============================================================
 PROJECT BIBLE
