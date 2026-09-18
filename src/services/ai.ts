@@ -31,14 +31,9 @@ export const VENDOR_PRESETS: Record<
   openrouter: {
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
-    knownFreeModels: [
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'qwen/qwen-2.5-72b-instruct:free',
-      'deepseek/deepseek-r1:free',
-      'mistralai/mistral-7b-instruct:free',
-    ],
-    description: 'Aggregator with dozens of verified free model tiers',
+    defaultModel: 'openrouter/free',
+    knownFreeModels: ['openrouter/free'],
+    description: 'Auto-routes requests to active free models dynamically without broken model IDs',
   },
   groq: {
     name: 'Groq Cloud',
@@ -119,9 +114,9 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
     baseUrl: 'https://openrouter.ai/api/v1',
     apiKey: '',
     autoPickBestModel: true,
-    preferredModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    preferredModel: 'openrouter/free',
     cycleFreeModelsOnError: true,
-    fallbackModels: 'meta-llama/llama-3.3-70b-instruct:free, qwen/qwen-2.5-72b-instruct:free, deepseek/deepseek-r1:free',
+    fallbackModels: 'openrouter/free',
     enabled: false,
   },
   {
@@ -162,9 +157,6 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
   },
 ];
 
-/**
- * Checks if a model ID is deprecated or no longer supported by its vendor
- */
 export function isDeprecatedModel(modelId: string): boolean {
   if (!modelId) return true;
   const id = modelId.toLowerCase().trim();
@@ -182,9 +174,6 @@ export function isDeprecatedModel(modelId: string): boolean {
   return false;
 }
 
-/**
- * Sanitizes and upgrades a provider tier to guarantee that it uses active, non-deprecated free models
- */
 export function sanitizeProviderTier(tier: ProviderTier): ProviderTier {
   const preset = VENDOR_PRESETS[tier.vendorType];
   if (!preset) return tier;
@@ -192,7 +181,10 @@ export function sanitizeProviderTier(tier: ProviderTier): ProviderTier {
   let preferred = tier.preferredModel || preset.defaultModel;
   let fallback = tier.fallbackModels || preset.knownFreeModels.join(', ');
 
-  if (isDeprecatedModel(preferred)) {
+  if (tier.vendorType === 'openrouter') {
+    preferred = 'openrouter/free';
+    fallback = 'openrouter/free';
+  } else if (isDeprecatedModel(preferred)) {
     preferred = preset.defaultModel;
   }
 
@@ -240,29 +232,6 @@ export function loadProviders(): ProviderTier[] {
 
     const raw = window.localStorage.getItem(LOCAL_STORAGE_PROVIDERS_KEY);
     if (!raw) {
-      const legacy = window.localStorage.getItem('scriptorium_providers');
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const sanitized = parsed.map((p, i) =>
-            sanitizeProviderTier({
-              id: `tier-${i + 1}`,
-              name: p.name || `API Tier ${i + 1}`,
-              vendorType: 'custom',
-              baseUrl: p.baseUrl || '',
-              apiKey: p.apiKey || '',
-              autoPickBestModel: true,
-              preferredModel: p.model || '',
-              cycleFreeModelsOnError: true,
-              fallbackModels: p.fallbackModels || '',
-              enabled: !!p.apiKey?.trim(),
-            })
-          );
-          sanitized.sort((a, b) => (b.apiKey ? 1 : 0) - (a.apiKey ? 1 : 0));
-          saveProviders(sanitized);
-          return sanitized;
-        }
-      }
       const initial = DEFAULT_PROVIDERS.map(sanitizeProviderTier);
       saveProviders(initial);
       return initial;
@@ -271,7 +240,6 @@ export function loadProviders(): ProviderTier[] {
     if (Array.isArray(parsed) && parsed.length > 0) {
       const sanitized = parsed.map(sanitizeProviderTier);
       sanitized.sort((a, b) => (b.apiKey ? 1 : 0) - (a.apiKey ? 1 : 0));
-      saveProviders(sanitized);
       return sanitized;
     }
   } catch (e) {
@@ -342,6 +310,7 @@ export async function fetchLiveModels(provider: ProviderTier): Promise<Discovere
       const id = item.id || item.name || '';
       const isFree =
         id.includes(':free') ||
+        id === 'openrouter/free' ||
         item.pricing?.prompt === 0 ||
         item.pricing?.prompt === '0' ||
         item.pricing?.completion === 0 ||
@@ -383,7 +352,8 @@ export function scoreModelForWriting(modelId: string): number {
 
   let score = 50;
 
-  if (id.includes('gemini-3.8-flash')) score += 60;
+  if (id === 'openrouter/free') score += 100;
+  else if (id.includes('gemini-3.8-flash')) score += 60;
   else if (id.includes('gemini-3.6-flash')) score += 58;
   else if (id.includes('gemini-flash-latest')) score += 56;
   else if (id.includes('gemini-3.1-flash-lite')) score += 52;
@@ -397,8 +367,6 @@ export function scoreModelForWriting(modelId: string): number {
   else if (id.includes('gpt-4o-mini')) score += 40;
   else if (id.includes('qwen-2.5-72b') || id.includes('qwen2.5-72b')) score += 43;
   else if (id.includes('mistral-large')) score += 40;
-  else if (id.includes('llama-3.1-8b') || id.includes('llama-3.2')) score += 35;
-  else if (id.includes('gemma2-9b')) score += 32;
 
   if (id.includes(':free')) score += 10;
 
@@ -406,6 +374,10 @@ export function scoreModelForWriting(modelId: string): number {
 }
 
 export function pickBestAvailableModel(provider: ProviderTier, discovered?: DiscoveredModel[]): string {
+  if (provider.vendorType === 'openrouter') {
+    return 'openrouter/free';
+  }
+
   const preset = VENDOR_PRESETS[provider.vendorType];
 
   const list = discovered || provider.cachedModels;
@@ -429,10 +401,14 @@ export function pickBestAvailableModel(provider: ProviderTier, discovered?: Disc
 }
 
 export function getAvailableFreeModels(provider: ProviderTier, discovered?: DiscoveredModel[]): string[] {
+  if (provider.vendorType === 'openrouter') {
+    return ['openrouter/free'];
+  }
+
   const models = new Set<string>();
 
   const list = discovered || provider.cachedModels;
-  if (list) {
+  if (list && list.length > 0) {
     list
       .filter((m) => (m.isFree || m.id.includes(':free')) && !isDeprecatedModel(m.id))
       .forEach((m) => models.add(m.id));
@@ -622,34 +598,35 @@ export async function testProviderConnection(
   const preset = VENDOR_PRESETS[provider.vendorType];
   const effectiveBaseUrl = preset?.baseUrl || provider.baseUrl;
 
+  let discoveredModels: DiscoveredModel[] = [];
+  if (provider.vendorType !== 'openrouter') {
+    try {
+      discoveredModels = await fetchLiveModels({ ...provider, baseUrl: effectiveBaseUrl });
+      provider.cachedModels = discoveredModels;
+    } catch (e) {
+      console.warn(`Live model fetch skipped or failed for ${provider.name}:`, e);
+    }
+  }
+
   const candidateModels: string[] = [];
 
-  if (provider.preferredModel?.trim() && !isDeprecatedModel(provider.preferredModel)) {
+  const bestDynamic = pickBestAvailableModel(provider, discoveredModels);
+  if (bestDynamic && !isDeprecatedModel(bestDynamic)) {
+    candidateModels.push(bestDynamic);
+  }
+
+  if (
+    provider.preferredModel?.trim() &&
+    !candidateModels.includes(provider.preferredModel.trim()) &&
+    !isDeprecatedModel(provider.preferredModel)
+  ) {
     candidateModels.push(provider.preferredModel.trim());
   }
 
-  if (preset?.defaultModel && !candidateModels.includes(preset.defaultModel)) {
-    candidateModels.push(preset.defaultModel);
-  }
-
-  if (preset?.knownFreeModels) {
-    preset.knownFreeModels.forEach((m) => {
-      if (!candidateModels.includes(m) && !isDeprecatedModel(m)) {
-        candidateModels.push(m);
-      }
-    });
-  }
-
-  if (provider.fallbackModels) {
-    provider.fallbackModels
-      .split(',')
-      .map((s) => s.trim())
-      .forEach((m) => {
-        if (m && !candidateModels.includes(m) && !isDeprecatedModel(m)) {
-          candidateModels.push(m);
-        }
-      });
-  }
+  const dynamicFrees = getAvailableFreeModels(provider, discoveredModels);
+  dynamicFrees.forEach((m) => {
+    if (!candidateModels.includes(m)) candidateModels.push(m);
+  });
 
   if (candidateModels.length === 0) {
     candidateModels.push(preset?.defaultModel || 'gemini-3.8-flash');
@@ -676,7 +653,7 @@ export async function testProviderConnection(
       return {
         success: true,
         workingModel: modelToTest,
-        message: `Connected & verified with ${modelToTest} (Free tier)!`,
+        message: `Connected & verified with ${modelToTest}!`,
       };
     } catch (err: any) {
       lastError = err.message || 'Connection failed';
@@ -711,7 +688,7 @@ export async function executeMultiVendorAi(
 
   if (enabledProviders.length === 0) {
     throw new Error(
-      'No active AI provider with an API key was found. Please open Settings and enter your API key (e.g. for Google Gemini).'
+      'No active AI provider with an API key was found. Please open Settings and enter your API key (e.g. for Google Gemini or OpenRouter).'
     );
   }
 
@@ -738,7 +715,17 @@ export async function executeMultiVendorAi(
     const provider = sanitizeProviderTier(rawProvider);
     const tierLabel = `Tier ${tierIdx + 1} (${provider.name})`;
 
-    const primaryModel = pickBestAvailableModel(provider);
+    let liveModels: DiscoveredModel[] = provider.cachedModels || [];
+    if (provider.vendorType !== 'openrouter' && liveModels.length === 0 && provider.apiKey) {
+      try {
+        liveModels = await fetchLiveModels(provider);
+        provider.cachedModels = liveModels;
+      } catch (e) {
+        console.warn(`Dynamic model query failed on ${provider.name}, using built-in fallbacks.`);
+      }
+    }
+
+    const primaryModel = pickBestAvailableModel(provider, liveModels);
 
     updateProgress(
       'generating',
@@ -766,7 +753,7 @@ export async function executeMultiVendorAi(
       );
 
       if (provider.cycleFreeModelsOnError) {
-        const freeModels = getAvailableFreeModels(provider).filter((m) => m !== primaryModel);
+        const freeModels = getAvailableFreeModels(provider, liveModels).filter((m) => m !== primaryModel);
 
         if (freeModels.length > 0) {
           updateProgress(
