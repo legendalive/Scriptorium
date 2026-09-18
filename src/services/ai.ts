@@ -19,11 +19,10 @@ export const VENDOR_PRESETS: Record<
   gemini: {
     name: 'Google Gemini (AI Studio)',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-3.8-flash',
+    defaultModel: 'gemini-1.5-flash',
     knownFreeModels: [
-      'gemini-3.8-flash',
-      'gemini-3.6-flash',
-      'gemini-3.1-flash-lite',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
       'gemini-flash-latest',
     ],
     description: 'Google AI Studio with high-performance free quotas and expansive context windows',
@@ -42,8 +41,8 @@ export const VENDOR_PRESETS: Record<
     knownFreeModels: [
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
-      'gemma2-9b-it',
       'mixtral-8x7b-32768',
+      'gemma2-9b-it',
     ],
     description: 'Extremely fast inference with free rate-limited tier',
   },
@@ -102,9 +101,9 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     apiKey: '',
     autoPickBestModel: true,
-    preferredModel: 'gemini-3.8-flash',
+    preferredModel: 'gemini-1.5-flash',
     cycleFreeModelsOnError: true,
-    fallbackModels: 'gemini-3.8-flash, gemini-3.6-flash, gemini-3.1-flash-lite, gemini-flash-latest',
+    fallbackModels: 'gemini-1.5-flash, gemini-1.5-pro, gemini-flash-latest',
     enabled: false,
   },
   {
@@ -128,7 +127,7 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
     autoPickBestModel: true,
     preferredModel: 'llama-3.3-70b-versatile',
     cycleFreeModelsOnError: true,
-    fallbackModels: 'llama-3.3-70b-versatile, llama-3.1-8b-instant, gemma2-9b-it',
+    fallbackModels: 'llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768, gemma2-9b-it',
     enabled: false,
   },
   {
@@ -152,7 +151,7 @@ export const DEFAULT_PROVIDERS: ProviderTier[] = [
     autoPickBestModel: true,
     preferredModel: 'deepseek-chat',
     cycleFreeModelsOnError: true,
-    fallbackModels: 'deepseek-chat',
+    fallbackModels: 'deepseek-chat, deepseek-reasoner',
     enabled: false,
   },
 ];
@@ -163,8 +162,6 @@ export function isDeprecatedModel(modelId: string): boolean {
   if (
     id.includes('gemini-2.0-flash') ||
     id.includes('gemini-2.0-pro') ||
-    id.includes('gemini-1.5-flash') ||
-    id.includes('gemini-1.5-pro') ||
     id.includes('gemini-2.0-flash-thinking') ||
     id === 'gemini-pro' ||
     id === 'gemini-1.0-pro'
@@ -353,16 +350,15 @@ export function scoreModelForWriting(modelId: string): number {
   let score = 50;
 
   if (id === 'openrouter/free') score += 100;
-  else if (id.includes('gemini-3.8-flash')) score += 60;
-  else if (id.includes('gemini-3.6-flash')) score += 58;
+  else if (id.includes('gemini-1.5-flash')) score += 60;
+  else if (id.includes('gemini-1.5-pro')) score += 58;
   else if (id.includes('gemini-flash-latest')) score += 56;
-  else if (id.includes('gemini-3.1-flash-lite')) score += 52;
   else if (id.includes('claude-3-7') || id.includes('claude-3.7')) score += 55;
   else if (id.includes('claude-3-5-sonnet') || id.includes('claude-3.5-sonnet')) score += 50;
   else if (id.includes('llama-3.3-70b')) score += 48;
   else if (id.includes('llama-3.1-70b')) score += 46;
   else if (id.includes('deepseek-chat') || id.includes('deepseek-v3')) score += 47;
-  else if (id.includes('deepseek-r1') || id.includes('r1')) score += 45;
+  else if (id.includes('deepseek-reasoner') || id.includes('deepseek-r1')) score += 45;
   else if (id.includes('gpt-4o') && !id.includes('mini')) score += 44;
   else if (id.includes('gpt-4o-mini')) score += 40;
   else if (id.includes('qwen-2.5-72b') || id.includes('qwen2.5-72b')) score += 43;
@@ -441,58 +437,72 @@ async function executeGeminiDirect(
   userPrompt: string,
   timeoutMs = 90000
 ): Promise<string> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const cleanModel = model.replace(/^models\//, '');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${apiKey}`;
+  const geminiCandidates = Array.from(
+    new Set([model.replace(/^models\//, ''), 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest'])
+  );
 
-    const response = await fetch(url, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.8,
-        },
-      }),
-    });
+  let lastErrMessage = '';
 
-    const raw = await response.text();
-    let data: any = null;
+  for (const targetModel of geminiCandidates) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      data = JSON.parse(raw);
-    } catch {
-      data = null;
-    }
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
 
-    if (!response.ok) {
-      const errMsg = data?.error?.message || data?.error || raw || `HTTP ${response.status}`;
-      throw new Error(`[Gemini Native - ${cleanModel}] HTTP ${response.status}: ${errMsg}`);
-    }
+      const response = await fetch(url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.8,
+          },
+        }),
+      });
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error(`[Gemini Native - ${cleanModel}] Received empty content in response.`);
-    }
+      const raw = await response.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = null;
+      }
 
-    return text;
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      throw new Error(`[Gemini Native - ${model}] Request timed out after ${timeoutMs / 1000}s.`);
+      if (!response.ok) {
+        const errMsg = data?.error?.message || data?.error || raw || `HTTP ${response.status}`;
+        lastErrMessage = `[Gemini Native - ${targetModel}] HTTP ${response.status}: ${errMsg}`;
+        console.warn(`Gemini Native [${targetModel}] failed, trying candidate fallback...`);
+        continue;
+      }
+
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        lastErrMessage = `[Gemini Native - ${targetModel}] Received empty content in response.`;
+        continue;
+      }
+
+      return text;
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        lastErrMessage = `[Gemini Native - ${targetModel}] Request timed out after ${timeoutMs / 1000}s.`;
+      } else {
+        lastErrMessage = err.message || 'Gemini Native request failed';
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  throw new Error(lastErrMessage || 'All Gemini native endpoint fallbacks were exhausted.');
 }
 
 export async function executeChatCompletion(
@@ -629,7 +639,7 @@ export async function testProviderConnection(
   });
 
   if (candidateModels.length === 0) {
-    candidateModels.push(preset?.defaultModel || 'gemini-3.8-flash');
+    candidateModels.push(preset?.defaultModel || 'gemini-1.5-flash');
   }
 
   let lastError = '';
