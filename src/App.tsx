@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { BookOpen, FolderKanban, Sparkles } from 'lucide-react';
 import { Workspace } from './components/Workspace';
 import { ProjectManagerModal } from './components/ProjectManagerModal';
@@ -36,16 +36,13 @@ export const App: React.FC = () => {
     ? novelText.trim().split(/\s+/).length
     : 0;
 
-  // Handler: Open Project Manager from Welcome Screen or Header
+  // Handlers
   const handleOpenProjectManager = () => {
     setIsProjectManagerOpen(true);
   };
 
-  // Handler: Select a project or close modal
   const handleCloseProjectManager = () => {
     setIsProjectManagerOpen(false);
-    // Move into the workspace once project manager is dismissed
-    setShowWelcomeScreen(false);
   };
 
   const handleSelectProject = (project: Project) => {
@@ -53,7 +50,7 @@ export const App: React.FC = () => {
     setManuscriptText(project.manuscriptText || '');
     setNovelText(project.novelText || '');
     setIsProjectManagerOpen(false);
-    setShowWelcomeScreen(false);
+    setShowWelcomeScreen(false); // Move to workspace when project is opened
   };
 
   // Workspace Actions
@@ -84,13 +81,11 @@ export const App: React.FC = () => {
   const handleGenerate = (promptText: string) => {
     if (!promptText.trim()) return;
     setAiProgress({ status: 'generating', message: 'Scripty is crafting prose...' });
-    // AI execution logic attaches here
   };
 
   const handleRewriteAi = () => {
     if (!aiOutput.trim() && !novelText.trim()) return;
     setAiProgress({ status: 'generating', message: 'Scripty is rewriting...' });
-    // AI rewrite logic attaches here
   };
 
   return (
@@ -135,7 +130,6 @@ export const App: React.FC = () => {
           <Header
             currentProjectName={currentProject?.name || 'Untitled Project'}
             onOpenProjectManager={handleOpenProjectManager}
-            onReturnHome={() => setShowWelcomeScreen(true)}
           />
 
           <Workspace
