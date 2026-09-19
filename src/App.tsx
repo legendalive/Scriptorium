@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { BookOpen, FolderKanban, Sparkles } from 'lucide-react';
-import { Workspace } from './components/Workspace';
-import { ProjectManager } from './components/ProjectManager';
-import { Header } from './components/Header';
+import { FolderKanban, Sparkles } from 'lucide-react';
 import { ChapterSegment, AiGenerationProgress, Project } from './types';
 import { parseChaptersFromText } from './utils/chapterHierarchy';
+
+// Imports from your components folder
+import { Header } from './components/Header';
+import { Workspace } from './components/Workspace';
 
 export const App: React.FC = () => {
   // Navigation / View State
@@ -39,18 +40,7 @@ export const App: React.FC = () => {
   // Handlers
   const handleOpenProjectManager = () => {
     setIsProjectManagerOpen(true);
-  };
-
-  const handleCloseProjectManager = () => {
-    setIsProjectManagerOpen(false);
-  };
-
-  const handleSelectProject = (project: Project) => {
-    setCurrentProject(project);
-    setManuscriptText(project.manuscriptText || '');
-    setNovelText(project.novelText || '');
-    setIsProjectManagerOpen(false);
-    setShowWelcomeScreen(false); // Move to workspace when project is opened
+    setShowWelcomeScreen(false);
   };
 
   // Workspace Actions
@@ -95,9 +85,9 @@ export const App: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <div className="max-w-md w-full flex flex-col items-center space-y-6">
             
-            {/* Logo Icon */}
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-500/20 to-zinc-900 border border-amber-500/30 flex items-center justify-center shadow-2xl">
-              <BookOpen className="w-10 h-10 text-amber-400" />
+            {/* App Logo */}
+            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-amber-500/20 to-zinc-900 border border-amber-500/30 flex items-center justify-center shadow-2xl overflow-hidden p-2">
+              <img src="/logo.png" alt="Scriptorium Logo" className="w-full h-full object-contain" />
             </div>
 
             {/* App Title & Tagline */}
@@ -129,7 +119,7 @@ export const App: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0">
           <Header
             currentProjectName={currentProject?.name || 'Untitled Project'}
-            onOpenProjectManager={handleOpenProjectManager}
+            onOpenProjectManager={() => setIsProjectManagerOpen(true)}
           />
 
           <Workspace
@@ -154,15 +144,6 @@ export const App: React.FC = () => {
             manuscriptRef={manuscriptRef}
           />
         </div>
-      )}
-
-      {/* Project Manager Modal */}
-      {isProjectManagerOpen && (
-        <ProjectManager
-          isOpen={isProjectManagerOpen}
-          onClose={handleCloseProjectManager}
-          onSelectProject={handleSelectProject}
-        />
       )}
     </div>
   );
