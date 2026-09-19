@@ -11,8 +11,9 @@ export interface NovelChapterNode {
   preview: string;
 }
 
-export function parseChaptersFromText(text: string, defaultPrefix = 'Chapter'): NovelChapterNode[] {
-  if (!text || !text.trim()) return [];
+export function parseChaptersFromText(text: string | null | undefined, defaultPrefix = 'Chapter'): NovelChapterNode[] {
+  // Safe guard against null/undefined/empty text
+  if (!text || typeof text !== 'string' || !text.trim()) return [];
 
   // Match chapter headings:
   // "Chapter 1", "CHAPTER ONE", "Chapter I: Title", "Prologue", "Epilogue", "Act 1", "# Chapter", or scene breaks "***"
@@ -22,18 +23,24 @@ export function parseChaptersFromText(text: string, defaultPrefix = 'Chapter'): 
   let match: RegExpExecArray | null;
 
   while ((match = chapterRegex.exec(text)) !== null) {
-    const rawTitle = match[1] || match[0];
-    const cleanTitle = rawTitle.replace(/[#*\n-]/g, '').trim();
+    const rawMatch = match[0] || '';
+    const capturedGroup = match[1] || '';
+    const targetString = capturedGroup || rawMatch;
+
+    const cleanTitle = (targetString || '').replace(/[#*\n-]/g, '').trim();
+
     if (cleanTitle.length > 0 && cleanTitle.length < 60) {
+      const offsetInMatch = rawMatch.indexOf(targetString);
+      const safeOffset = offsetInMatch >= 0 ? offsetInMatch : 0;
+
       matches.push({
         title: cleanTitle,
-        charIndex: match.index + (match[0].indexOf(match[1] || match[0])),
+        charIndex: match.index + safeOffset,
       });
     }
   }
 
-  // If no explicit chapter headings found, but text is large (> 300 words),
-  // divide into logical scenes / chapter segments
+  // If no explicit chapter headings found, but text is present
   if (matches.length === 0) {
     const paragraphs = text.split(/\n\s*\n+/).filter(Boolean);
     if (paragraphs.length <= 4) {
@@ -43,8 +50,8 @@ export function parseChaptersFromText(text: string, defaultPrefix = 'Chapter'): 
           index: 1,
           title: `${defaultPrefix} 1`,
           charIndex: 0,
-          wordCount: text.split(/\s+/).filter(Boolean).length,
-          preview: paragraphs[0]?.slice(0, 120) || '',
+          wordCount: (text || '').split(/\s+/).filter(Boolean).length,
+          preview: (paragraphs[0] || '').slice(0, 120),
         },
       ];
     }
@@ -63,7 +70,7 @@ export function parseChaptersFromText(text: string, defaultPrefix = 'Chapter'): 
         title: `${defaultPrefix} ${chNum}`,
         charIndex: curCharIdx,
         wordCount: groupText.split(/\s+/).filter(Boolean).length,
-        preview: group[0]?.slice(0, 120) || '',
+        preview: (group[0] || '').slice(0, 120),
       });
       curCharIdx += groupText.length + 2;
     }
@@ -75,13 +82,13 @@ export function parseChaptersFromText(text: string, defaultPrefix = 'Chapter'): 
   for (let i = 0; i < matches.length; i++) {
     const current = matches[i];
     const nextCharIndex = i + 1 < matches.length ? matches[i + 1].charIndex : text.length;
-    const chBody = text.substring(current.charIndex, nextCharIndex).trim();
+    const chBody = (text.substring(current.charIndex, nextCharIndex) || '').trim();
     nodes.push({
       id: `ch-node-${i + 1}`,
       index: i + 1,
-      title: current.title,
+      title: current.title || `${defaultPrefix} ${i + 1}`,
       charIndex: current.charIndex,
-      wordCount: chBody.split(/\s+/).filter(Boolean).length,
+      wordCount: chBody ? chBody.split(/\s+/).filter(Boolean).length : 0,
       preview: chBody.slice(0, 120),
     });
   }

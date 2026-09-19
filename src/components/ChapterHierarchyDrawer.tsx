@@ -6,16 +6,14 @@ import {
   BookOpen,
   Plus,
   ChevronRight,
-  Hash,
-  Layers,
 } from 'lucide-react';
 import { parseChaptersFromText, NovelChapterNode } from '../utils/chapterHierarchy';
 
 interface ChapterHierarchyDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  manuscriptText: string;
-  novelText: string;
+  manuscriptText?: string;
+  novelText?: string;
   onJumpManuscript: (charIndex: number, length: number) => void;
   onJumpNovel: (charIndex: number, length: number) => void;
   onAddChapterBreak: (target: 'manuscript' | 'novel') => void;
@@ -24,26 +22,29 @@ interface ChapterHierarchyDrawerProps {
 export const ChapterHierarchyDrawer: React.FC<ChapterHierarchyDrawerProps> = ({
   isOpen,
   onClose,
-  manuscriptText,
-  novelText,
+  manuscriptText = '',
+  novelText = '',
   onJumpManuscript,
   onJumpNovel,
   onAddChapterBreak,
 }) => {
   const [activeTab, setActiveTab] = useState<'novel' | 'manuscript'>('novel');
 
+  const safeNovelText = novelText || '';
+  const safeManuscriptText = manuscriptText || '';
+
   const novelChapters = useMemo(
-    () => parseChaptersFromText(novelText, 'Chapter'),
-    [novelText]
+    () => parseChaptersFromText(safeNovelText, 'Chapter'),
+    [safeNovelText]
   );
 
   const manuscriptChapters = useMemo(
-    () => parseChaptersFromText(manuscriptText, 'Draft Section'),
-    [manuscriptText]
+    () => parseChaptersFromText(safeManuscriptText, 'Draft Section'),
+    [safeManuscriptText]
   );
 
   const currentChapters = activeTab === 'novel' ? novelChapters : manuscriptChapters;
-  const currentTotalWords = currentChapters.reduce((acc, c) => acc + c.wordCount, 0);
+  const currentTotalWords = (currentChapters || []).reduce((acc, c) => acc + (c?.wordCount || 0), 0);
 
   if (!isOpen) return null;
 
@@ -113,10 +114,11 @@ export const ChapterHierarchyDrawer: React.FC<ChapterHierarchyDrawerProps> = ({
             <div
               key={node.id}
               onClick={() => {
+                const titleLength = (node.title || '').length;
                 if (activeTab === 'novel') {
-                  onJumpNovel(node.charIndex, node.title.length);
+                  onJumpNovel(node.charIndex, titleLength);
                 } else {
-                  onJumpManuscript(node.charIndex, node.title.length);
+                  onJumpManuscript(node.charIndex, titleLength);
                 }
               }}
               className="group p-2.5 rounded-lg border border-zinc-850 bg-zinc-900/40 hover:bg-zinc-850/80 hover:border-zinc-700 cursor-pointer transition-all"
@@ -127,14 +129,14 @@ export const ChapterHierarchyDrawer: React.FC<ChapterHierarchyDrawerProps> = ({
                     #{node.index}
                   </span>
                   <span className="text-xs font-semibold text-zinc-200 truncate group-hover:text-amber-300 transition-colors">
-                    {node.title}
+                    {node.title || 'Untitled'}
                   </span>
                 </div>
                 <ChevronRight className="w-3 h-3 text-zinc-600 group-hover:text-zinc-300 shrink-0 transition-colors mt-0.5" />
               </div>
 
               <div className="flex items-center justify-between text-[10px] text-zinc-400 mt-1">
-                <span className="font-mono text-zinc-400">{node.wordCount.toLocaleString()} w</span>
+                <span className="font-mono text-zinc-400">{(node.wordCount || 0).toLocaleString()} w</span>
                 {node.preview && (
                   <span className="truncate max-w-[150px] text-zinc-500 italic text-[10px]">
                     {node.preview}
