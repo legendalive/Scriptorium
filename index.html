@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Scriptorium</title>
+    <!-- App Logo / Favicon -->
+    <link rel="icon" type="image/png" href="./logo.png" />
     <meta name="description" content="AI-assisted novel writing studio with dynamic multi-vendor fallback, structured entity project bible, and multi-pane manuscript workspace." />
     <meta property="og:title" content="Scriptorium" />
     <meta property="og:description" content="AI-assisted novel writing studio with dynamic multi-vendor fallback, structured entity project bible, and multi-pane manuscript workspace." />
@@ -28,16 +30,13 @@
     <div id="root">
       <div style="height: 100vh; display: flex; align-items: center; justify-content: center; background: #09090b; color: #a1a1aa; font-family: sans-serif; font-size: 13px;">
         <div style="text-align: center;">
-          <div style="width: 24px; height: 24px; border: 2px solid #27272a; border-top-color: #f59e0b; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px auto;"></div>
+          <!-- App Logo in Loading Screen -->
+          <img src="./logo.png" alt="Scriptorium" style="width: 32px; height: 32px; margin: 0 auto 12px auto; display: block; object-fit: contain;" />
           <div style="font-weight: 600; color: #e4e4e7; letter-spacing: 0.05em;">SCRIPTORIUM</div>
           <div style="font-size: 11px; margin-top: 4px; color: #71717a;">Loading workspace...</div>
         </div>
       </div>
-      <style>
-        @keyframes spin { to { transform: rotate(360deg); } }
-      </style>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

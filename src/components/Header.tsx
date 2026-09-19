@@ -65,12 +65,17 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="hidden sm:inline">Config</span>
       </button>
 
-      {/* Center Project Indicator */}
+      {/* Center Project Indicator with App Logo */}
       <div className="flex-1 min-w-0 text-center px-2">
         <div className="font-bold tracking-wide text-zinc-100 text-sm sm:text-base flex items-center justify-center gap-2">
+          <img 
+            src={`${import.meta.env.BASE_URL}logo.png`} 
+            alt="Scriptorium Logo" 
+            className="w-5 h-5 object-contain"
+          />
           <span>Scriptorium</span>
           {project?.type === 'series' && (
-            <span className="hidden md:inline text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            <span className="hidden md:inline text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-300 border border-slate-700">
               Series
             </span>
           )}
