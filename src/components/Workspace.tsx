@@ -24,21 +24,21 @@ import { ChapterHierarchyDrawer } from './ChapterHierarchyDrawer';
 import { parseChaptersFromText } from '../utils/chapterHierarchy';
 
 interface WorkspaceProps {
-  manuscriptText: string;
+  manuscriptText?: string;
   onManuscriptChange: (val: string) => void;
-  chapters: ChapterSegment[];
+  chapters?: ChapterSegment[];
   onAcceptManuscript: () => void;
-  novelText: string;
+  novelText?: string;
   onNovelChange: (val: string) => void;
   onClearNovel: () => void;
-  novelWordCount: number;
-  aiOutput: string;
+  novelWordCount?: number;
+  aiOutput?: string;
   onAiOutputChange: (val: string) => void;
-  aiProgress: AiGenerationProgress;
+  aiProgress?: AiGenerationProgress;
   onAcceptAi: () => void;
   onRewriteAi: () => void;
   onDiscardAi: () => void;
-  mobilePrompt: string;
+  mobilePrompt?: string;
   setMobilePrompt: (val: string) => void;
   onGenerate: (p: string) => void;
   mainNovelRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -46,21 +46,21 @@ interface WorkspaceProps {
 }
 
 export const Workspace: React.FC<WorkspaceProps> = ({
-  manuscriptText,
+  manuscriptText = '',
   onManuscriptChange,
-  chapters,
+  chapters = [],
   onAcceptManuscript,
-  novelText,
+  novelText = '',
   onNovelChange,
   onClearNovel,
-  novelWordCount,
-  aiOutput,
+  novelWordCount = 0,
+  aiOutput = '',
   onAiOutputChange,
-  aiProgress,
+  aiProgress = { status: 'idle', message: '' },
   onAcceptAi,
   onRewriteAi,
   onDiscardAi,
-  mobilePrompt,
+  mobilePrompt = '',
   setMobilePrompt,
   onGenerate,
   mainNovelRef,
@@ -98,7 +98,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 
     const onManuscriptWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (!manuscriptEl.value.trim()) return;
+      if (!manuscriptEl.value?.trim()) return;
 
       e.preventDefault();
 
@@ -106,7 +106,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       if (now - lastManuscriptWheel.current < 160) return;
       lastManuscriptWheel.current = now;
 
-      const indices = getParagraphIndices(manuscriptEl.value);
+      const indices = getParagraphIndices(manuscriptEl.value || '');
       if (indices.length <= 1) return;
 
       const currentScrollTop = manuscriptEl.scrollTop;
@@ -145,7 +145,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 
     const onNovelWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (!novelEl.value.trim()) return;
+      if (!novelEl.value?.trim()) return;
 
       e.preventDefault();
 
@@ -153,7 +153,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       if (now - lastNovelWheel.current < 140) return;
       lastNovelWheel.current = now;
 
-      const indices = getSentenceIndices(novelEl.value);
+      const indices = getSentenceIndices(novelEl.value || '');
       if (indices.length <= 1) return;
 
       const currentScrollTop = novelEl.scrollTop;
@@ -205,14 +205,16 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   };
 
   const handleAddChapterBreak = (target: 'manuscript' | 'novel') => {
+    const currentText = target === 'novel' ? (novelText || '') : (manuscriptText || '');
+    const currentNodes = parseChaptersFromText(currentText, 'Chapter');
+    const nextIdx = currentNodes.length + 1;
+    const breakText = `\n\nChapter ${nextIdx}\n\n`;
+    
     if (target === 'novel') {
-      const currentNodes = parseChaptersFromText(novelText, 'Chapter');
-      const nextIdx = currentNodes.length + 1;
-      const breakText = `\n\nChapter ${nextIdx}\n\n`;
       const textarea = mainNovelRef.current;
       if (textarea) {
-        const start = textarea.selectionStart || novelText.length;
-        const updated = novelText.slice(0, start) + breakText + novelText.slice(start);
+        const start = textarea.selectionStart || currentText.length;
+        const updated = currentText.slice(0, start) + breakText + currentText.slice(start);
         onNovelChange(updated);
         setTimeout(() => {
           const newPos = start + breakText.length;
@@ -221,16 +223,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           textarea.scrollTo({ top: getCharScrollTop(textarea, start), behavior: 'smooth' });
         }, 50);
       } else {
-        onNovelChange(novelText + breakText);
+        onNovelChange(currentText + breakText);
       }
     } else {
-      const currentNodes = parseChaptersFromText(manuscriptText, 'Chapter');
-      const nextIdx = currentNodes.length + 1;
-      const breakText = `\n\nChapter ${nextIdx}\n\n`;
       const textarea = manuscriptRef.current;
       if (textarea) {
-        const start = textarea.selectionStart || manuscriptText.length;
-        const updated = manuscriptText.slice(0, start) + breakText + manuscriptText.slice(start);
+        const start = textarea.selectionStart || currentText.length;
+        const updated = currentText.slice(0, start) + breakText + currentText.slice(start);
         onManuscriptChange(updated);
         setTimeout(() => {
           const newPos = start + breakText.length;
@@ -239,7 +238,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           textarea.scrollTo({ top: getCharScrollTop(textarea, start), behavior: 'smooth' });
         }, 50);
       } else {
-        onManuscriptChange(manuscriptText + breakText);
+        onManuscriptChange(currentText + breakText);
       }
     }
   };
@@ -294,23 +293,23 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (mobilePrompt.trim() && aiProgress.status !== 'generating') {
-              onGenerate(mobilePrompt);
+            if ((mobilePrompt || '').trim() && aiProgress?.status !== 'generating') {
+              onGenerate(mobilePrompt || '');
             }
           }}
           className="flex items-center gap-2"
         >
           <input
             type="text"
-            value={mobilePrompt}
+            value={mobilePrompt || ''}
             onChange={(e) => setMobilePrompt(e.target.value)}
             placeholder="Command Scripty..."
-            disabled={aiProgress.status === 'generating'}
+            disabled={aiProgress?.status === 'generating'}
             className="flex-1 bg-zinc-950 border border-zinc-700/80 rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-amber-400"
           />
           <button
             type="submit"
-            disabled={!mobilePrompt.trim() || aiProgress.status === 'generating'}
+            disabled={!(mobilePrompt || '').trim() || aiProgress?.status === 'generating'}
             className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-lg text-xs flex items-center gap-1 disabled:opacity-40 transition-colors shrink-0"
           >
             <Send className="w-3 h-3" />
@@ -319,7 +318,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         </form>
       </div>
 
-      {/* Main Workspace (Vertical stack on mobile, horizontal row on desktop) */}
+      {/* Main Workspace */}
       <main
         id="workspace"
         ref={containerRef}
@@ -329,8 +328,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         <ChapterHierarchyDrawer
           isOpen={isHierarchyOpen}
           onClose={() => setIsHierarchyOpen(false)}
-          manuscriptText={manuscriptText}
-          novelText={novelText}
+          manuscriptText={manuscriptText || ''}
+          novelText={novelText || ''}
           onJumpManuscript={handleJumpManuscript}
           onJumpNovel={handleJumpNovel}
           onAddChapterBreak={handleAddChapterBreak}
@@ -356,7 +355,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5">
-              {/* Collapsible Hierarchy Toggle Button */}
               <button
                 id="toggleHierarchyBtn"
                 onClick={() => setIsHierarchyOpen(!isHierarchyOpen)}
@@ -371,7 +369,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                 <span className="hidden sm:inline">Hierarchy</span>
               </button>
 
-              {/* Detected Chapters Drawer Toggle */}
               <button
                 id="toggleChapterDrawerBtn"
                 onClick={() => setShowChapterDrawer(!showChapterDrawer)}
@@ -379,7 +376,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                 title="View detected chapters"
               >
                 <Layers className="w-3 h-3 text-amber-400" />
-                <span>{chapters.length} ch</span>
+                <span>{(chapters || []).length} ch</span>
                 <ChevronDown
                   className={`w-3 h-3 transition-transform ${
                     showChapterDrawer ? 'rotate-180' : ''
@@ -387,7 +384,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                 />
               </button>
 
-              {/* Small Expand to Fullscreen Button in top right */}
               <button
                 id="expandManuscriptBtn"
                 onClick={() => setIsManuscriptExpanded(!isManuscriptExpanded)}
@@ -412,7 +408,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             <textarea
               id="manuscriptEditor"
               ref={manuscriptRef}
-              value={manuscriptText}
+              value={manuscriptText || ''}
               onChange={(e) => onManuscriptChange(e.target.value)}
               spellCheck="true"
               placeholder="Paste or type raw draft chapters or research here..."
@@ -423,14 +419,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               }`}
             />
 
-            {/* Chapter Preview Drawer */}
             {showChapterDrawer && (
               <div
                 id="chapterPreviewDrawer"
                 className="shrink-0 max-h-48 border-t border-zinc-800 bg-zinc-900/95 backdrop-blur p-3 overflow-y-auto space-y-2 shadow-2xl"
               >
                 <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center justify-between">
-                  <span>Detected Chapters ({chapters.length})</span>
+                  <span>Detected Chapters ({(chapters || []).length})</span>
                   <button
                     onClick={() => setShowChapterDrawer(false)}
                     className="text-zinc-500 hover:text-zinc-300"
@@ -438,7 +433,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                     Close
                   </button>
                 </div>
-                {chapters.length === 0 ? (
+                {(!chapters || chapters.length === 0) ? (
                   <p className="text-[11px] text-zinc-500 italic">
                     Type or paste text above to automatically detect scene boundaries.
                   </p>
@@ -481,7 +476,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               <button
                 id="acceptManuscriptBtn"
                 onClick={onAcceptManuscript}
-                disabled={!manuscriptText.trim()}
+                disabled={!(manuscriptText || '').trim()}
                 className="flex-1 h-10 rounded-lg bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-40 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />
@@ -526,7 +521,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                   id="wordCount"
                   className="text-[11px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800"
                 >
-                  {novelWordCount.toLocaleString()} {novelWordCount === 1 ? 'word' : 'words'}
+                  {(novelWordCount || 0).toLocaleString()} {novelWordCount === 1 ? 'word' : 'words'}
                 </span>
 
                 <button
@@ -545,7 +540,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               <textarea
                 id="mainNovelEditor"
                 ref={mainNovelRef}
-                value={novelText}
+                value={novelText || ''}
                 onChange={(e) => onNovelChange(e.target.value)}
                 spellCheck="true"
                 placeholder="Your canon manuscript will grow here. Accept text from raw drafts or AI prompts..."
@@ -588,17 +583,17 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               <div
                 id="aiStatus"
                 className={`text-[11px] truncate max-w-[180px] font-medium ${
-                  aiProgress.status === 'generating'
+                  aiProgress?.status === 'generating'
                     ? 'text-amber-400 animate-pulse'
-                    : aiProgress.status === 'error'
+                    : aiProgress?.status === 'error'
                     ? 'text-red-400'
-                    : aiProgress.status === 'success'
+                    : aiProgress?.status === 'success'
                     ? 'text-emerald-400'
                     : 'text-zinc-500'
                 }`}
-                title={aiProgress.message}
+                title={aiProgress?.message || ''}
               >
-                {aiProgress.message || 'Idle'}
+                {aiProgress?.message || 'Idle'}
               </div>
             </div>
 
@@ -606,7 +601,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             <div className="flex-1 min-h-[250px] md:min-h-0 relative">
               <textarea
                 id="aiOutput"
-                value={aiOutput}
+                value={aiOutput || ''}
                 onChange={(e) => onAiOutputChange(e.target.value)}
                 spellCheck="true"
                 placeholder="Scripty's novel prose and continuations will stream here..."
@@ -619,7 +614,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               <button
                 id="acceptAiBtn"
                 onClick={onAcceptAi}
-                disabled={!aiOutput.trim() || aiProgress.status === 'generating'}
+                disabled={!(aiOutput || '').trim() || aiProgress?.status === 'generating'}
                 className="h-10 rounded-lg bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-40 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-[0.99]"
               >
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -629,13 +624,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               <button
                 id="rewriteAiBtn"
                 onClick={onRewriteAi}
-                disabled={aiProgress.status === 'generating'}
+                disabled={aiProgress?.status === 'generating'}
                 className="h-10 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
                 title="Rewrite current selection in Main Novel, or rewrite AI output"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${
-                    aiProgress.status === 'generating' ? 'animate-spin text-amber-400' : ''
+                    aiProgress?.status === 'generating' ? 'animate-spin text-amber-400' : ''
                   }`}
                 />
                 <span>Rewrite</span>
@@ -644,7 +639,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               <button
                 id="discardAiBtn"
                 onClick={onDiscardAi}
-                disabled={!aiOutput.trim() || aiProgress.status === 'generating'}
+                disabled={!(aiOutput || '').trim() || aiProgress?.status === 'generating'}
                 className="h-10 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-red-950/40 hover:border-red-900/60 hover:text-red-300 text-xs font-medium text-zinc-400 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
               >
                 <X className="w-3.5 h-3.5" />
