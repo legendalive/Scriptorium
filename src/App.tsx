@@ -29,12 +29,16 @@ export const App: React.FC = () => {
   const mainNovelRef = useRef<HTMLTextAreaElement | null>(null);
   const manuscriptRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Derived state: Automatically parse chapters from manuscript text
-  const chapters: ChapterSegment[] = parseChaptersFromText(manuscriptText, 'Chapter');
+  // Derived state: Automatically parse chapters from manuscript text safely
+  const safeManuscript = manuscriptText || '';
+  const safeNovel = novelText || '';
+  const safeAiOutput = aiOutput || '';
 
-  // Word count helper
-  const novelWordCount = novelText.trim()
-    ? novelText.trim().split(/\s+/).length
+  const chapters: ChapterSegment[] = parseChaptersFromText(safeManuscript, 'Chapter');
+
+  // Word count helper with safe string checks
+  const novelWordCount = safeNovel.trim()
+    ? safeNovel.trim().split(/\s+/).length
     : 0;
 
   // Handlers
@@ -45,8 +49,8 @@ export const App: React.FC = () => {
 
   // Workspace Actions
   const handleAcceptManuscript = () => {
-    if (!manuscriptText.trim()) return;
-    const combined = novelText ? `${novelText}\n\n${manuscriptText}` : manuscriptText;
+    if (!safeManuscript.trim()) return;
+    const combined = safeNovel ? `${safeNovel}\n\n${safeManuscript}` : safeManuscript;
     setNovelText(combined);
   };
 
@@ -57,8 +61,8 @@ export const App: React.FC = () => {
   };
 
   const handleAcceptAi = () => {
-    if (!aiOutput.trim()) return;
-    const combined = novelText ? `${novelText}\n\n${aiOutput}` : aiOutput;
+    if (!safeAiOutput.trim()) return;
+    const combined = safeNovel ? `${safeNovel}\n\n${safeAiOutput}` : safeAiOutput;
     setNovelText(combined);
     setAiOutput('');
   };
@@ -69,12 +73,13 @@ export const App: React.FC = () => {
   };
 
   const handleGenerate = (promptText: string) => {
-    if (!promptText.trim()) return;
+    const textToGenerate = promptText || '';
+    if (!textToGenerate.trim()) return;
     setAiProgress({ status: 'generating', message: 'Scripty is crafting prose...' });
   };
 
   const handleRewriteAi = () => {
-    if (!aiOutput.trim() && !novelText.trim()) return;
+    if (!safeAiOutput.trim() && !safeNovel.trim()) return;
     setAiProgress({ status: 'generating', message: 'Scripty is rewriting...' });
   };
 
@@ -123,21 +128,21 @@ export const App: React.FC = () => {
           />
 
           <Workspace
-            manuscriptText={manuscriptText}
+            manuscriptText={safeManuscript}
             onManuscriptChange={setManuscriptText}
-            chapters={chapters}
+            chapters={chapters ?? []}
             onAcceptManuscript={handleAcceptManuscript}
-            novelText={novelText}
+            novelText={safeNovel}
             onNovelChange={setNovelText}
             onClearNovel={handleClearNovel}
-            novelWordCount={novelWordCount}
-            aiOutput={aiOutput}
+            novelWordCount={novelWordCount ?? 0}
+            aiOutput={safeAiOutput}
             onAiOutputChange={setAiOutput}
-            aiProgress={aiProgress}
+            aiProgress={aiProgress ?? { status: 'idle', message: '' }}
             onAcceptAi={handleAcceptAi}
             onRewriteAi={handleRewriteAi}
             onDiscardAi={handleDiscardAi}
-            mobilePrompt={mobilePrompt}
+            mobilePrompt={mobilePrompt || ''}
             setMobilePrompt={setMobilePrompt}
             onGenerate={handleGenerate}
             mainNovelRef={mainNovelRef}
