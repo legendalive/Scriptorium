@@ -288,7 +288,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   }, [draggingDivider, col1Width, col2Width, col3Width]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative">
+    <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
       {/* Mobile Scripty prompt bar */}
       <div className="lg:hidden shrink-0 border-b border-zinc-800 bg-zinc-900/60 p-2.5">
         <form
@@ -319,11 +319,11 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         </form>
       </div>
 
-      {/* Main Workspace (with optional Collapsible Chapter Hierarchy Drawer) */}
+      {/* Main Workspace (Vertical stack on mobile, horizontal row on desktop) */}
       <main
         id="workspace"
         ref={containerRef}
-        className="flex-1 min-h-0 flex overflow-hidden select-text relative"
+        className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden select-text relative"
       >
         {/* Collapsible Chapter & Scene Hierarchy Binder */}
         <ChapterHierarchyDrawer
@@ -339,12 +339,12 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         {/* ================= COLUMN 1: MANUSCRIPT ================= */}
         <section
           id="manuscriptCol"
-          className={`h-full flex flex-col min-w-[200px] border-r border-zinc-800 bg-zinc-950/40 transition-all ${
+          className={`flex flex-col border-b md:border-b-0 md:border-r border-zinc-800 bg-zinc-950/40 transition-all shrink-0 md:shrink min-h-[400px] md:min-h-0 ${
             isManuscriptExpanded
-              ? 'absolute inset-0 z-40 bg-zinc-950 w-full'
-              : ''
+              ? 'absolute inset-0 z-40 bg-zinc-950 w-full h-full'
+              : 'w-full md:w-auto h-auto md:h-full'
           }`}
-          style={isManuscriptExpanded ? { width: '100%' } : { width: `${col1Width}%` }}
+          style={isManuscriptExpanded ? { width: '100%' } : { width: window.innerWidth >= 768 ? `${col1Width}%` : '100%' }}
         >
           {/* Header */}
           <div className="h-11 shrink-0 border-b border-zinc-800 flex items-center justify-between px-3 bg-zinc-900/40">
@@ -405,7 +405,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 
           {/* Editor & Chapter Drawer */}
           <div
-            className={`flex-1 min-h-0 relative flex flex-col ${
+            className={`flex-1 min-h-[250px] md:min-h-0 relative flex flex-col ${
               isManuscriptExpanded ? 'max-w-4xl mx-auto w-full px-4' : ''
             }`}
           >
@@ -496,7 +496,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           <div
             id="divider1"
             onMouseDown={() => setDraggingDivider(1)}
-            className={`w-[7px] shrink-0 cursor-col-resize relative bg-zinc-900 border-x border-zinc-800/80 hover:bg-zinc-700 transition-colors z-20 ${
+            className={`hidden md:flex w-[7px] shrink-0 cursor-col-resize relative bg-zinc-900 border-x border-zinc-800/80 hover:bg-zinc-700 transition-colors z-20 ${
               draggingDivider === 1 ? 'bg-amber-400' : ''
             }`}
             title="Drag to resize columns"
@@ -509,8 +509,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         {!isManuscriptExpanded && (
           <section
             id="mainCol"
-            className="h-full flex flex-col min-w-[220px] bg-zinc-950/20"
-            style={{ width: `${col2Width}%` }}
+            className="flex flex-col border-b md:border-b-0 bg-zinc-950/20 shrink-0 md:shrink min-h-[400px] md:min-h-0 w-full md:w-auto h-auto md:h-full"
+            style={{ width: window.innerWidth >= 768 ? `${col2Width}%` : '100%' }}
           >
             {/* Header */}
             <div className="h-11 shrink-0 border-b border-zinc-800 flex items-center justify-between px-3 bg-zinc-900/40">
@@ -541,7 +541,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             </div>
 
             {/* Editor */}
-            <div className="flex-1 min-h-0 relative">
+            <div className="flex-1 min-h-[250px] md:min-h-0 relative">
               <textarea
                 id="mainNovelEditor"
                 ref={mainNovelRef}
@@ -560,7 +560,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           <div
             id="divider2"
             onMouseDown={() => setDraggingDivider(2)}
-            className={`w-[7px] shrink-0 cursor-col-resize relative bg-zinc-900 border-x border-zinc-800/80 hover:bg-zinc-700 transition-colors z-20 ${
+            className={`hidden md:flex w-[7px] shrink-0 cursor-col-resize relative bg-zinc-900 border-x border-zinc-800/80 hover:bg-zinc-700 transition-colors z-20 ${
               draggingDivider === 2 ? 'bg-amber-400' : ''
             }`}
             title="Drag to resize columns"
@@ -573,8 +573,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
         {!isManuscriptExpanded && (
           <section
             id="aiCol"
-            className="h-full flex flex-col min-w-[200px] border-l border-zinc-800 bg-zinc-950/60"
-            style={{ width: `${col3Width}%` }}
+            className="flex flex-col border-l-0 md:border-l border-zinc-800 bg-zinc-950/60 shrink-0 md:shrink min-h-[400px] md:min-h-0 w-full md:w-auto h-auto md:h-full"
+            style={{ width: window.innerWidth >= 768 ? `${col3Width}%` : '100%' }}
           >
             {/* Header */}
             <div className="h-11 shrink-0 border-b border-zinc-800 flex items-center justify-between px-3 bg-zinc-900/40">
@@ -603,7 +603,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             </div>
 
             {/* AI Output Editor */}
-            <div className="flex-1 min-h-0 relative">
+            <div className="flex-1 min-h-[250px] md:min-h-0 relative">
               <textarea
                 id="aiOutput"
                 value={aiOutput}
