@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { BookOpen, FolderKanban, Sparkles } from 'lucide-react';
 import { Workspace } from './components/Workspace';
-import { ProjectManagerModal } from './components/ProjectManagerModal';
+import { ProjectManager } from './components/ProjectManager';
 import { Header } from './components/Header';
 import { ChapterSegment, AiGenerationProgress, Project } from './types';
 import { parseChaptersFromText } from './utils/chapterHierarchy';
@@ -158,7 +158,7 @@ export const App: React.FC = () => {
 
       {/* Project Manager Modal */}
       {isProjectManagerOpen && (
-        <ProjectManagerModal
+        <ProjectManager
           isOpen={isProjectManagerOpen}
           onClose={handleCloseProjectManager}
           onSelectProject={handleSelectProject}
