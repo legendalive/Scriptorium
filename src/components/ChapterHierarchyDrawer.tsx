@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   BookMarked,
   X,
@@ -7,13 +7,13 @@ import {
   Plus,
   ChevronRight,
 } from 'lucide-react';
-import { parseChaptersFromText, NovelChapterNode } from '../utils/chapterHierarchy';
+import { NovelChapterNode } from '../utils/chapterHierarchy';
 
 interface ChapterHierarchyDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  manuscriptText?: string;
-  novelText?: string;
+  novelChapters: NovelChapterNode[];
+  manuscriptChapters: NovelChapterNode[];
   onJumpManuscript: (charIndex: number, length: number) => void;
   onJumpNovel: (charIndex: number, length: number) => void;
   onAddChapterBreak: (target: 'manuscript' | 'novel') => void;
@@ -22,42 +22,13 @@ interface ChapterHierarchyDrawerProps {
 export const ChapterHierarchyDrawer: React.FC<ChapterHierarchyDrawerProps> = ({
   isOpen,
   onClose,
-  manuscriptText = '',
-  novelText = '',
+  novelChapters = [],
+  manuscriptChapters = [],
   onJumpManuscript,
   onJumpNovel,
   onAddChapterBreak,
 }) => {
   const [activeTab, setActiveTab] = useState<'novel' | 'manuscript'>('novel');
-  const [novelChapters, setNovelChapters] = useState<NovelChapterNode[]>([]);
-  const [manuscriptChapters, setManuscriptChapters] = useState<NovelChapterNode[]>([]);
-
-  // Track previous lengths to detect structural breaks vs minor edits
-  const lastNovelLength = useRef<number>(0);
-  const lastManuscriptLength = useRef<number>(0);
-
-  // Initial load & structural change check for Main Novel
-  useEffect(() => {
-    const lengthDiff = Math.abs((novelText?.length || 0) - lastNovelLength.current);
-    const isInitialLoad = lastNovelLength.current === 0 && novelText.length > 0;
-    
-    // Parse fully on initial load, or if a large change/chapter keyword appears
-    if (isInitialLoad || lengthDiff > 50 || /chapter|prologue|epilogue|#/i.test(novelText)) {
-      setNovelChapters(parseChaptersFromText(novelText, 'Chapter'));
-      lastNovelLength.current = novelText.length;
-    }
-  }, [novelText]);
-
-  // Initial load & structural change check for Manuscript
-  useEffect(() => {
-    const lengthDiff = Math.abs((manuscriptText?.length || 0) - lastManuscriptLength.current);
-    const isInitialLoad = lastManuscriptLength.current === 0 && manuscriptText.length > 0;
-
-    if (isInitialLoad || lengthDiff > 50 || /chapter|draft|#/i.test(manuscriptText)) {
-      setManuscriptChapters(parseChaptersFromText(manuscriptText, 'Draft Section'));
-      lastManuscriptLength.current = manuscriptText.length;
-    }
-  }, [manuscriptText]);
 
   const currentChapters = activeTab === 'novel' ? novelChapters : manuscriptChapters;
   const currentTotalWords = currentChapters.reduce((acc, c) => acc + (c?.wordCount || 0), 0);
@@ -167,15 +138,7 @@ export const ChapterHierarchyDrawer: React.FC<ChapterHierarchyDrawerProps> = ({
       {/* Bottom Action: Add Chapter Break */}
       <div className="p-2 border-t border-zinc-800 bg-zinc-900/40 shrink-0">
         <button
-          onClick={() => {
-            onAddChapterBreak(activeTab);
-            // Force re-parse when explicit break is inserted
-            if (activeTab === 'novel') {
-              setNovelChapters(parseChaptersFromText(novelText, 'Chapter'));
-            } else {
-              setManuscriptChapters(parseChaptersFromText(manuscriptText, 'Draft Section'));
-            }
-          }}
+          onClick={() => onAddChapterBreak(activeTab)}
           className="w-full py-2 px-3 rounded-lg border border-zinc-700/80 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
         >
           <Plus className="w-3.5 h-3.5 text-amber-400" />
