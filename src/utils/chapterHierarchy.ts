@@ -1,5 +1,6 @@
 /**
  * Utilities for detecting, organizing, and navigating longform chapter & scene hierarchies.
+ * Optimized for large-scale manuscripts without thread blocking.
  */
 
 export interface NovelChapterNode {
@@ -11,85 +12,96 @@ export interface NovelChapterNode {
   preview: string;
 }
 
-export function parseChaptersFromText(text: string | null | undefined, defaultPrefix = 'Chapter'): NovelChapterNode[] {
-  // Safe guard against null/undefined/empty text
+/**
+ * Fast approximation of word count without heavy array allocations.
+ */
+function fastWordCount(text: string): number {
+  if (!text) return 0;
+  let count = 0;
+  let inWord = false;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    // Non-whitespace character
+    if (code > 32) {
+      if (!inWord) {
+        count++;
+        inWord = true;
+      }
+    } else {
+      inWord = false;
+    }
+  }
+  return count;
+}
+
+export function parseChaptersFromText(
+  text: string | null | undefined,
+  defaultPrefix = 'Chapter'
+): NovelChapterNode[] {
   if (!text || typeof text !== 'string' || !text.trim()) return [];
 
-  // Match chapter headings:
-  // "Chapter 1", "CHAPTER ONE", "Chapter I: Title", "Prologue", "Epilogue", "Act 1", "# Chapter", or scene breaks "***"
-  const chapterRegex = /(?:^|\n\s*\n)(?:#+\s*)?(?:(Chapter\s+(?:\d+|[IVXLCDM]+|[A-Za-z]+)(?::[^\n]+)?|Prologue|Epilogue|Act\s+[IVXLCDM\d]+|Scene\s+\d+|Part\s+\d+|[A-Z\s]{4,}(?:\n|$))|(?:(?:\*\s*){3,}|(?:-\s*){3,}))/gi;
-
+  // Simple, safe line-by-line header detection (prevents regex backtracking)
+  const lines = text.split('\n');
   const matches: { title: string; charIndex: number }[] = [];
-  let match: RegExpExecArray | null;
+  let currentOffset = 0;
 
-  while ((match = chapterRegex.exec(text)) !== null) {
-    const rawMatch = match[0] || '';
-    const capturedGroup = match[1] || '';
-    const targetString = capturedGroup || rawMatch;
+  const headerPattern = /^(?:#+\s*)?(?:Chapter\s+(?:\d+|[IVXLCDM]+|[A-Za-z]+)(?::[^\n]+)?|Prologue|Epilogue|Act\s+[IVXLCDM\d]+|Scene\s+\d+|Part\s+\d+)/i;
 
-    const cleanTitle = (targetString || '').replace(/[#*\n-]/g, '').trim();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
 
-    if (cleanTitle.length > 0 && cleanTitle.length < 60) {
-      const offsetInMatch = rawMatch.indexOf(targetString);
-      const safeOffset = offsetInMatch >= 0 ? offsetInMatch : 0;
-
-      matches.push({
-        title: cleanTitle,
-        charIndex: match.index + safeOffset,
-      });
+    if (trimmed.length > 0 && trimmed.length < 80 && headerPattern.test(trimmed)) {
+      const cleanTitle = trimmed.replace(/^[#*\s-]+|[#*\s-]+$/g, '');
+      if (cleanTitle) {
+        matches.push({
+          title: cleanTitle,
+          charIndex: currentOffset + line.indexOf(trimmed),
+        });
+      }
     }
+    // Add line length + newline character
+    currentOffset += line.length + 1;
   }
 
-  // If no explicit chapter headings found, but text is present
+  // Fallback: If no headers detected, split logically by size without heavy sub-splits
   if (matches.length === 0) {
-    const paragraphs = text.split(/\n\s*\n+/).filter(Boolean);
-    if (paragraphs.length <= 4) {
-      return [
-        {
-          id: 'ch-1',
-          index: 1,
-          title: `${defaultPrefix} 1`,
-          charIndex: 0,
-          wordCount: (text || '').split(/\s+/).filter(Boolean).length,
-          preview: (paragraphs[0] || '').slice(0, 120),
-        },
-      ];
-    }
+    const totalWords = fastWordCount(text);
+    const targetChunks = Math.min(12, Math.max(1, Math.ceil(totalWords / 3000)));
+    const chunkSizeChar = Math.ceil(text.length / targetChunks);
 
-    const chunkSize = Math.max(3, Math.ceil(paragraphs.length / 6));
-    const result: NovelChapterNode[] = [];
-    let curCharIdx = 0;
+    const nodes: NovelChapterNode[] = [];
+    for (let i = 0; i < targetChunks; i++) {
+      const start = i * chunkSizeChar;
+      const end = Math.min(text.length, (i + 1) * chunkSizeChar);
+      const chunkText = text.substring(start, end);
 
-    for (let i = 0; i < paragraphs.length; i += chunkSize) {
-      const group = paragraphs.slice(i, i + chunkSize);
-      const groupText = group.join('\n\n');
-      const chNum = Math.floor(i / chunkSize) + 1;
-      result.push({
-        id: `ch-${chNum}`,
-        index: chNum,
-        title: `${defaultPrefix} ${chNum}`,
-        charIndex: curCharIdx,
-        wordCount: groupText.split(/\s+/).filter(Boolean).length,
-        preview: (group[0] || '').slice(0, 120),
+      nodes.push({
+        id: `ch-${i + 1}`,
+        index: i + 1,
+        title: `${defaultPrefix} ${i + 1}`,
+        charIndex: start,
+        wordCount: fastWordCount(chunkText),
+        preview: chunkText.trim().slice(0, 100),
       });
-      curCharIdx += groupText.length + 2;
     }
-    return result;
+    return nodes;
   }
 
-  // If headings were found, calculate word count and previews between headings
+  // Build chapter nodes from matches
   const nodes: NovelChapterNode[] = [];
   for (let i = 0; i < matches.length; i++) {
     const current = matches[i];
     const nextCharIndex = i + 1 < matches.length ? matches[i + 1].charIndex : text.length;
-    const chBody = (text.substring(current.charIndex, nextCharIndex) || '').trim();
+    const chBody = text.substring(current.charIndex, nextCharIndex);
+
     nodes.push({
       id: `ch-node-${i + 1}`,
       index: i + 1,
-      title: current.title || `${defaultPrefix} ${i + 1}`,
+      title: current.title,
       charIndex: current.charIndex,
-      wordCount: chBody ? chBody.split(/\s+/).filter(Boolean).length : 0,
-      preview: chBody.slice(0, 120),
+      wordCount: fastWordCount(chBody),
+      preview: chBody.trim().slice(0, 100),
     });
   }
 
