@@ -15,7 +15,7 @@ export interface NovelChapterNode {
 /**
  * Fast approximation of word count without heavy array allocations.
  */
-function fastWordCount(text: string): number {
+export function fastWordCount(text: string): number {
   if (!text) return 0;
   let count = 0;
   let inWord = false;
