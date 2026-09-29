@@ -14,9 +14,10 @@ import {
   AlertCircle,
   AlertTriangle,
   FileCode,
+  Loader2,
 } from 'lucide-react';
 import { Project } from '../types';
-import { parseManuscriptFile } from '../services/importer';
+import { ingestManuscriptFile } from '../services/ingestClient';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -46,17 +47,17 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   const [bookName, setBookName] = useState('');
   const [seriesName, setSeriesName] = useState('');
   const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null);
-
   // Manuscript choice: 'upload' vs 'blank'
   const [manuscriptMode, setManuscriptMode] = useState<'upload' | 'blank'>('blank');
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [manuscriptText, setManuscriptText] = useState('');
   const [manuscriptWords, setManuscriptWords] = useState(0);
   const [isParsing, setIsParsing] = useState(false);
+  const [parseProgress, setParseProgress] = useState(0);
+  const [parseStage, setParseStage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [parseError, setParseError] = useState('');
   const [showPasteBox, setShowPasteBox] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -69,6 +70,8 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     setManuscriptText('');
     setManuscriptWords(0);
     setIsParsing(false);
+    setParseProgress(0);
+    setParseStage('');
     setIsDragging(false);
     setParseError('');
     setShowPasteBox(false);
@@ -78,8 +81,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   const handleFileProcess = async (file: File) => {
     setParseError('');
     setIsParsing(true);
+    setParseProgress(0);
+    setParseStage('Reading file…');
     try {
-      const result = await parseManuscriptFile(file);
+      const result = await ingestManuscriptFile(file, (percent, message) => {
+        setParseProgress(percent);
+        setParseStage(message);
+      });
       setUploadedFileName(result.fileName);
       setManuscriptText(result.text);
       setManuscriptWords(result.wordCount);
@@ -89,6 +97,8 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
       setParseError(err.message || 'Failed to read file.');
     } finally {
       setIsParsing(false);
+      setParseProgress(0);
+      setParseStage('');
     }
   };
 
@@ -129,16 +139,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     e.preventDefault();
     if (!bookName.trim()) return;
     if (view === 'create_series' && !seriesName.trim()) return;
-
     const initialManuscript = manuscriptMode === 'upload' ? manuscriptText.trim() : '';
-
     onCreateProject(
       view === 'create_series' ? 'series' : 'book',
       bookName.trim(),
       view === 'create_series' ? seriesName.trim() : undefined,
       initialManuscript
     );
-
     resetForm();
   };
 
@@ -177,7 +184,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">
                   Your Projects ({projects.length})
                 </div>
-
                 {projects.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-xs text-zinc-400">
                     No books created yet. Click below to start your first project!
@@ -233,7 +239,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                               </div>
                             </div>
                           </button>
-
                           <div className="flex items-center gap-2 ml-3">
                             {isActive ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-zinc-950 uppercase tracking-wider">
@@ -248,14 +253,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                                 Open
                               </button>
                             )}
-
                             <button
                               id={`deleteProjectBtn_${p.id}`}
                               onClick={() => setProjectPendingDelete(p)}
                               title={`Delete "${p.bookName}"`}
                               className="w-7 h-7 rounded hover:bg-red-950/40 text-zinc-400 hover:text-red-400 flex items-center justify-center transition-colors"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 w-3.5" />
                             </button>
                           </div>
                         </div>
@@ -264,7 +268,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   </div>
                 )}
               </div>
-
               {/* Create Options */}
               <div className="pt-4 border-t border-zinc-800">
                 <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">
@@ -287,7 +290,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                       Independent novel. You can upload an existing manuscript or start from a blank page.
                     </p>
                   </button>
-
                   <button
                     id="newSeriesCardBtn"
                     onClick={() => {
@@ -325,7 +327,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   Back to List
                 </button>
               </div>
-
               {view === 'create_series' && (
                 <div>
                   <label className="block text-xs font-semibold text-zinc-300 mb-1">
@@ -341,7 +342,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   />
                 </div>
               )}
-
               <div>
                 <label className="block text-xs font-semibold text-zinc-300 mb-1">
                   Book / Novel Title *
@@ -355,13 +355,11 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   className="w-full h-10 rounded-lg border border-zinc-700 bg-zinc-900 px-3 text-xs text-zinc-200 outline-none focus:border-amber-400"
                 />
               </div>
-
               {/* Manuscript Starting Option */}
               <div className="pt-2 border-t border-zinc-800/80">
                 <label className="block text-xs font-semibold text-zinc-300 mb-2">
                   Manuscript Setup:
                 </label>
-
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   {/* Option 1: Start with Blank Manuscript */}
                   <button
@@ -388,7 +386,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                       Fresh blank canvas. Begin writing from scratch or with Scripty.
                     </p>
                   </button>
-
                   {/* Option 2: Upload Manuscript */}
                   <button
                     type="button"
@@ -415,7 +412,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                     </p>
                   </button>
                 </div>
-
                 {/* Upload Zone when manuscriptMode === 'upload' */}
                 {manuscriptMode === 'upload' && (
                   <div className="space-y-3 p-3.5 rounded-xl border border-zinc-700/80 bg-zinc-900/90">
@@ -423,30 +419,55 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileInputChange}
-                      accept=".docx,.txt,.md,.markdown,.rtf"
+                      accept=".docx,.txt,.md,.markdown"
                       className="hidden"
                     />
-
                     {!uploadedFileName && !manuscriptText ? (
-                      /* Drag & Drop zone */
+                      /* Drag & Drop zone with live progress */
                       <div
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
-                          isDragging
-                            ? 'border-amber-400 bg-amber-400/10'
-                            : 'border-zinc-700 hover:border-zinc-500 bg-zinc-950/60'
+                        onDrop={(e) => {
+                          if (!isParsing) handleDrop(e);
+                        }}
+                        onClick={() => {
+                          if (!isParsing) fileInputRef.current?.click();
+                        }}
+                        className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors ${
+                          isParsing
+                            ? 'border-amber-400/60 bg-amber-400/5 cursor-wait'
+                            : isDragging
+                              ? 'border-amber-400 bg-amber-400/10 cursor-pointer'
+                              : 'border-zinc-700 hover:border-zinc-500 bg-zinc-950/60 cursor-pointer'
                         }`}
                       >
-                        <Upload className="w-6 h-6 text-amber-400 mx-auto mb-2" />
-                        <div className="text-xs font-semibold text-zinc-200">
-                          {isParsing ? 'Reading and extracting manuscript...' : 'Drop your manuscript here or click to browse'}
-                        </div>
-                        <div className="text-[11px] text-zinc-400 mt-1">
-                          Supports Word (.docx), Markdown (.md), and Plain Text (.txt)
-                        </div>
+                        {isParsing ? (
+                          <>
+                            <Loader2 className="w-6 h-6 text-amber-400 mx-auto mb-2 animate-spin" />
+                            <div className="text-xs font-semibold text-zinc-200">
+                              {parseStage || 'Processing…'}
+                            </div>
+                            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                              <div
+                                className="h-full rounded-full bg-amber-400 transition-[width] duration-200"
+                                style={{ width: `${parseProgress}%` }}
+                              />
+                            </div>
+                            <div className="text-[10px] text-zinc-500 mt-1 font-mono">
+                              {parseProgress}%
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-6 h-6 text-amber-400 mx-auto mb-2" />
+                            <div className="text-xs font-semibold text-zinc-200">
+                              Drop your manuscript here or click to browse
+                            </div>
+                            <div className="text-[11px] text-zinc-400 mt-1">
+                              Supports Word (.docx), Markdown (.md), and Plain Text (.txt) — images are ignored
+                            </div>
+                          </>
+                        )}
                       </div>
                     ) : (
                       /* Uploaded file preview */
@@ -462,7 +483,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                             </div>
                           </div>
                         </div>
-
                         <button
                           type="button"
                           onClick={clearUploadedFile}
@@ -473,14 +493,12 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                         </button>
                       </div>
                     )}
-
                     {parseError && (
                       <div className="text-[11px] text-red-400 flex items-center gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                         <span>{parseError}</span>
                       </div>
                     )}
-
                     {/* Or paste directly toggle */}
                     <div className="pt-1 flex items-center justify-between text-[11px]">
                       <button
@@ -491,14 +509,12 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                         <FileCode className="w-3 h-3" />
                         <span>{showPasteBox ? 'Hide text editor' : 'Or paste text directly from clipboard'}</span>
                       </button>
-
                       {manuscriptWords > 0 && (
                         <span className="text-zinc-400 font-mono">
                           {manuscriptWords.toLocaleString()} words
                         </span>
                       )}
                     </div>
-
                     {showPasteBox && (
                       <textarea
                         rows={4}
@@ -515,7 +531,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   </div>
                 )}
               </div>
-
               {/* Submit Buttons */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
                 <button
@@ -537,7 +552,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
           )}
         </div>
       </div>
-
       {/* In-App Confirmation Modal for Deleting a Book */}
       {projectPendingDelete && (
         <div
@@ -560,7 +574,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 </p>
               </div>
             </div>
-
             <div className="pt-2 flex items-center justify-end gap-2.5">
               <button
                 type="button"
@@ -578,7 +591,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   setProjectPendingDelete(null);
                   onDeleteProject(id);
                 }}
-                className="h-8 px-4 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-500 shadow-md shadow-red-950/40 transition-colors flex items-center gap-1.5"
+                className="h-8 px-3.5 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-500 shadow-md shadow-red-950/40 transition-colors flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Book</span>
