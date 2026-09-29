@@ -1,27 +1,35 @@
 /// <reference lib="webworker" />
-import { parseChaptersFromText, NovelChapterNode } from '../utils/chapterHierarchy';
+import { parseChaptersFromText, fastWordCount, NovelChapterNode } from '../utils/chapterHierarchy';
 import { pickExtractor } from '../utils/textExtractors';
 
-export type WorkerRequest =
-  | { type: 'ingest'; requestId: number; key: string; fileName: string; mime: string;
-      prefix: string; target: 'novel' | 'manuscript'; buffer: ArrayBuffer }
-  | { type: 'body'; requestId: number; start: number; end: number }
-  | { type: 'reset' };
+export type WorkerRequest = {
+  type: 'ingest';
+  requestId: number;
+  key: string;
+  fileName: string;
+  mime: string;
+  prefix: string;
+  buffer: ArrayBuffer;
+};
 
 export type WorkerResponse =
   | { type: 'progress'; requestId: number; percent: number; message: string }
-  | { type: 'nodes'; requestId: number; target: 'novel' | 'manuscript';
-      nodes: NovelChapterNode[]; totalWords: number; chars: number; cached: boolean }
-  | { type: 'body'; requestId: number; start: number; end: number; text: string }
+  | {
+      type: 'result';
+      requestId: number;
+      fileName: string;
+      text: string;
+      nodes: NovelChapterNode[];
+      wordCount: number;
+      cached: boolean;
+    }
   | { type: 'error'; requestId: number; message: string };
 
 const post = (m: WorkerResponse) => (self as unknown as Worker).postMessage(m);
 
-/** The full book text lives ONLY here, never in the UI thread. */
-let currentText: string | null = null;
-
-/* ---- best-effort IndexedDB cache: re-opening the same file is instant ---- */
-const DB = 'scriptorium-cache', STORE = 'texts';
+/* ---- IndexedDB cache: re-importing the same file is instant ---- */
+const DB = 'scriptorium-cache';
+const STORE = 'texts';
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const rq = indexedDB.open(DB, 1);
@@ -38,7 +46,9 @@ async function cacheGet(key: string): Promise<string | null> {
       rq.onsuccess = () => resolve(typeof rq.result === 'string' ? rq.result : null);
       rq.onerror = () => resolve(null);
     });
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 async function cacheSet(key: string, text: string): Promise<void> {
   try {
@@ -46,46 +56,37 @@ async function cacheSet(key: string, text: string): Promise<void> {
     await new Promise<void>((resolve) => {
       const tx = db.transaction(STORE, 'readwrite');
       tx.objectStore(STORE).put(text, key);
-      tx.oncomplete = () => resolve(); tx.onerror = () => resolve(); tx.onabort = () => resolve();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
     });
-  } catch { /* cache is optional */ }
+  } catch {
+    /* cache is best-effort */
+  }
 }
 
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
-  const msg = e.data;
-
-  if (msg.type === 'reset') { currentText = null; return; }
-
-  if (msg.type === 'body') {
-    const text = currentText ?? '';
-    post({ type: 'body', requestId: msg.requestId, start: msg.start, end: msg.end,
-           text: text.slice(msg.start, msg.end) });
-    return;
-  }
-
-  const { requestId, key, fileName, mime, prefix, target, buffer } = msg;
+  const { requestId, key, fileName, mime, prefix, buffer } = e.data;
   try {
     let cached = false;
     let text = await cacheGet(key);
     if (text) {
       cached = true;
-      post({ type: 'progress', requestId, percent: 80, message: 'Loaded from cache…' });
+      post({ type: 'progress', requestId, percent: 70, message: 'Loaded from cache…' });
     } else {
       const extract = pickExtractor(fileName, mime);
       if (!extract) throw new Error(`Unsupported file type: ${fileName}`);
       post({ type: 'progress', requestId, percent: 5, message: 'Reading file…' });
-      // Scale extractor progress into the 5–90% band.
       text = await extract(buffer, (p, m) =>
-        post({ type: 'progress', requestId, percent: Math.round(5 + p * 0.85), message: m }));
-      cacheSet(key, text); // fire-and-forget
+        post({ type: 'progress', requestId, percent: Math.round(5 + p * 0.75), message: m })
+      );
+      cacheSet(key, text);
     }
-
-    currentText = text;
-    post({ type: 'progress', requestId, percent: 92, message: 'Detecting chapters…' });
+    post({ type: 'progress', requestId, percent: 85, message: 'Detecting chapters…' });
     const nodes = parseChaptersFromText(text, prefix);
-    const totalWords = nodes.reduce((s, n) => s + n.wordCount, 0);
+    const wordCount = fastWordCount(text);
     post({ type: 'progress', requestId, percent: 100, message: 'Done' });
-    post({ type: 'nodes', requestId, target, nodes, totalWords, chars: text.length, cached });
+    post({ type: 'result', requestId, fileName, text, nodes, wordCount, cached });
   } catch (err) {
     post({ type: 'error', requestId, message: err instanceof Error ? err.message : String(err) });
   }
