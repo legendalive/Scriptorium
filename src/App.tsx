@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChapterHierarchyDrawer } from './components/ChapterHierarchyDrawer';
-import { NovelChapterNode } from './utils/chapterHierarchy';
-import { ParseWorkerOutput } from './workers/chapterParser.worker';
+import { NovelChapterNode, parseChaptersFromText } from './utils/chapterHierarchy';
 
 export const EditorContainer: React.FC = () => {
   // 1. Core Workflow States
@@ -14,59 +13,26 @@ export const EditorContainer: React.FC = () => {
   const [manuscriptChapters, setManuscriptChapters] = useState<NovelChapterNode[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(true);
 
-  // 3. Web Worker for Async Chapter Parsing (Keeps typing at 60 FPS)
-  const workerRef = useRef<Worker | null>(null);
-
-  useEffect(() => {
-    // Initialize Web Worker
-    workerRef.current = new Worker(
-      new URL('./workers/chapterParser.worker.ts', import.meta.url),
-      { type: 'module' }
-    );
-
-    workerRef.current.onmessage = (e: MessageEvent<ParseWorkerOutput>) => {
-      const { nodes, target } = e.data;
-      if (target === 'novel') {
-        setNovelChapters(nodes);
-      } else {
-        setManuscriptChapters(nodes);
-      }
-    };
-
-    return () => {
-      workerRef.current?.terminate();
-    };
-  }, []);
-
   // Debounced parsing for Main Novel (Final Draft)
+  // We parse directly here since the text is already in memory. 
+  // The Web Worker is now reserved exclusively for heavy file ingestion in ProjectModal.
   useEffect(() => {
     const timer = setTimeout(() => {
-      workerRef.current?.postMessage({
-        text: novelText,
-        prefix: 'Chapter',
-        target: 'novel',
-      });
+      setNovelChapters(parseChaptersFromText(novelText, 'Chapter'));
     }, 400);
-
     return () => clearTimeout(timer);
   }, [novelText]);
 
   // Debounced parsing for Manuscript (Working Draft)
   useEffect(() => {
     const timer = setTimeout(() => {
-      workerRef.current?.postMessage({
-        text: manuscriptText,
-        prefix: 'Section',
-        target: 'manuscript',
-      });
+      setManuscriptChapters(parseChaptersFromText(manuscriptText, 'Section'));
     }, 400);
-
     return () => clearTimeout(timer);
   }, [manuscriptText]);
 
   // Actions for Workflow Transitions
   const handleAcceptAiOutput = () => {
-    // Append or replace polished AI text into Main Novel / Manuscript
     setNovelText((prev) => (prev ? `${prev}\n\n${aiOutputText}` : aiOutputText));
     setAiOutputText('');
   };
@@ -76,13 +42,11 @@ export const EditorContainer: React.FC = () => {
   };
 
   const handleJumpToChar = (target: 'novel' | 'manuscript', charIndex: number) => {
-    // Scroll or set editor selection to charIndex
     const element = document.getElementById(
       target === 'novel' ? 'novelEditor' : 'manuscriptEditor'
     );
     if (element) {
       element.focus();
-      // If native textarea/input:
       if ('setSelectionRange' in element) {
         (element as HTMLTextAreaElement).setSelectionRange(charIndex, charIndex);
       }
